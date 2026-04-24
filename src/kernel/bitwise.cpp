@@ -57,7 +57,50 @@ void naive_bitwise(std::span<std::int8_t> result,
 // TODO: Optimize the bitwise function
 void stu_bitwise(std::span<std::int8_t> result, std::span<const std::int8_t> a,
                  std::span<const std::int8_t> b) {
-    // Implement your version...
+    // Optimize by processing multiple values in parallel using 64-bit registers
+    // This allows us to process 8 int8 values at once
+    constexpr std::uint8_t kMaskLo = 0x5Au;
+    constexpr std::uint8_t kMaskHi = 0xC3u;
+    
+    // Create 64-bit masks for parallel operation
+    constexpr std::uint64_t kMaskLo64 = 0x5A5A5A5A5A5A5A5AUL;
+    constexpr std::uint64_t kMaskHi64 = 0xC3C3C3C3C3C3C3C3UL;
+
+    const std::size_t n = std::min({result.size(), a.size(), b.size()});
+    std::size_t i = 0;
+
+    // Process 8 elements at a time using 64-bit parallelism
+    const std::size_t chunk_size = 8;
+    for (; i + chunk_size <= n; i += chunk_size) {
+        std::uint64_t ua, ub;
+        std::memcpy(&ua, &a[i], 8);
+        std::memcpy(&ub, &b[i], 8);
+
+        std::uint64_t shared = ua & ub;
+        std::uint64_t either = ua | ub;
+        std::uint64_t diff = ua ^ ub;
+        std::uint64_t mixed0 = (diff & kMaskLo64) | (~shared & ~kMaskLo64);
+        std::uint64_t mixed1 = ((either ^ kMaskHi64) & (shared | ~kMaskHi64)) ^ diff;
+
+        std::uint64_t res = mixed0 ^ mixed1;
+        std::memcpy(&result[i], &res, 8);
+    }
+
+    // Handle remaining elements
+    for (; i < n; ++i) {
+        const auto ua = static_cast<std::uint8_t>(a[i]);
+        const auto ub = static_cast<std::uint8_t>(b[i]);
+
+        const auto shared = static_cast<std::uint8_t>(ua & ub);
+        const auto either = static_cast<std::uint8_t>(ua | ub);
+        const auto diff = static_cast<std::uint8_t>(ua ^ ub);
+        const auto mixed0 =
+            static_cast<std::uint8_t>((diff & kMaskLo) | (~shared & ~kMaskLo));
+        const auto mixed1 = static_cast<std::uint8_t>(
+            ((either ^ kMaskHi) & (shared | ~kMaskHi)) ^ diff);
+
+        result[i] = static_cast<std::int8_t>(mixed0 ^ mixed1);
+    }
 }
 
 void naive_bitwise_wrapper(void *ctx) {

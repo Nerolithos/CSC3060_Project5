@@ -30,9 +30,14 @@ struct graph_args {
     std::uint64_t out;
     double epsilon;
     // TODO: You may want to add new params at the end...
+    
+    // Optimized data structure: offset array and adjacency array
+    std::vector<int> node_offsets;  // offsets[i] = start index of edges for node i
+    std::vector<int> adjacency;     // flattened adjacency list
+    bool converted;                 // whether data structure has been converted
 
     explicit graph_args(double epsilon_in = 1e-6)
-        : graph{0, nullptr}, out{0}, epsilon{epsilon_in} {}
+        : graph{0, nullptr}, out{0}, epsilon{epsilon_in}, converted(false) {}
 };
 
 void naive_graph(std::uint64_t& out, const Graph& graph);

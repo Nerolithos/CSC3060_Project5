@@ -78,7 +78,52 @@ void naive_grff(grff_args& args) {
 // TODO: Student Implementation
 // -------------------------------------------------------------------------
 void stu_grff(grff_args& args) {
-
+    // Optimized implementation with loop fusion
+    size_t n = args.a_features.size();
+    
+    // Stage 1 & 2: Fused - Gate and Update A (Residual)
+    std::vector<float> G(n), A_prime(n);
+    float sum_a = 0.0f;
+    
+    for (size_t i = 0; i < n; ++i) {
+        // Stage 1
+        G[i] = 0.5f * ((args.a_features[i] * args.b_features[i]) / (1.0f + std::abs(args.a_features[i] * args.b_features[i])) + 1.0f);
+        // Stage 2
+        A_prime[i] = args.a_features[i] + G[i];
+        // Accumulate for Stage 3
+        sum_a += A_prime[i];
+    }
+    
+    // Stage 3: Compute average
+    float avg_a = sum_a / static_cast<float>(n);
+    
+    // Stages 4-9: Fused in single loop
+    std::vector<float> Smooth_A(n), C_prime(n);
+    
+    // First compute Smooth_A (Stage 4) - needs previous value
+    Smooth_A[0] = A_prime[0];
+    for (size_t i = 1; i < n; ++i) {
+        Smooth_A[i] = (A_prime[i] + A_prime[i-1]) * 0.5f;
+    }
+    
+    // Stages 5-9: Fully fused
+    for (size_t i = 0; i < n; ++i) {
+        // Stage 5: Update B (Suppression)
+        float B_prime = args.b_features[i] * (1.0f - G[i]) * avg_a;
+        
+        // Stage 6: Context Integration
+        C_prime[i] = args.c_features[i] + (Smooth_A[i] / (1.0f + std::abs(Smooth_A[i])));
+        
+        // Stage 7: Hidden Interaction
+        float H = Smooth_A[i] * C_prime[i];
+        
+        // Stage 8: Normalization
+        float E = (H + B_prime) / (1.0f + std::abs(Smooth_A[i]));
+        
+        // Stage 9: Final Output (ReLU)
+        float result = C_prime[i] - E;
+        args.f_output[i] = std::max(result, 0.0f);
+    }
 }
 
 // -------------------------------------------------------------------------

@@ -212,6 +212,62 @@ void csr_spmm(const CSRMatrix &csr, const std::vector<float> &dense_t,
     }
 }
 
+// Optimized sparse matrix multiplication with loop restructuring
+void stu_csr_spmm(const CSRMatrix &csr, const std::vector<float> &dense_t,
+                  std::vector<float> &out) {
+    const size_t rows = csr.rows;
+    const size_t cols = csr.cols;
+    const size_t dense_cols = dense_t.size() / cols;
+    
+    // Initialize output
+    std::fill(out.begin(), out.end(), 0.0f);
+    
+    // Restructured loop for better cache locality:
+    // Iterate through sparse matrix column by column in the outer loop
+    // This improves prefetch and cache reuse of dense_t
+    for (int r = 0; r < csr.rows; ++r) {
+        float *out_row = &out[r * dense_cols];
+        
+        // Process sparse entries for this row
+        const int row_start = csr.row_ptr[r];
+        const int row_end = csr.row_ptr[r + 1];
+        
+        // Unroll the inner loop to reduce loop overhead
+        // Process 4 outputs at a time when possible
+        const size_t unroll_factor = 4;
+        size_t n = 0;
+        
+        for (; n + unroll_factor <= dense_cols; n += unroll_factor) {
+            float acc0 = 0.0f, acc1 = 0.0f, acc2 = 0.0f, acc3 = 0.0f;
+            
+            for (int p = row_start; p < row_end; ++p) {
+                const float val = csr.values[p];
+                const int col = csr.col_idx[p];
+                
+                acc0 += val * dense_t[(n + 0) * cols + col];
+                acc1 += val * dense_t[(n + 1) * cols + col];
+                acc2 += val * dense_t[(n + 2) * cols + col];
+                acc3 += val * dense_t[(n + 3) * cols + col];
+            }
+            
+            out_row[n + 0] = acc0;
+            out_row[n + 1] = acc1;
+            out_row[n + 2] = acc2;
+            out_row[n + 3] = acc3;
+        }
+        
+        // Handle remaining columns
+        for (; n < dense_cols; ++n) {
+            const float *bt_row = &dense_t[n * cols];
+            float acc = 0.0f;
+            for (int p = row_start; p < row_end; ++p) {
+                acc += csr.values[p] * bt_row[csr.col_idx[p]];
+            }
+            out_row[n] = acc;
+        }
+    }
+}
+
 void naive_sparse_spmm_wrapper(void *ctx) {
     auto &args = *static_cast<sparse_spmm_args *>(ctx);
     csr_spmm(args.csr, args.dense_t, args.out);
@@ -220,7 +276,7 @@ void naive_sparse_spmm_wrapper(void *ctx) {
 // TODO: Implement your version (e.g. stu_csr_spmm), and call it in stu_sparse_spmm_wrapper
 void stu_sparse_spmm_wrapper(void *ctx) {
     auto &args = *static_cast<sparse_spmm_args *>(ctx);
-    csr_spmm(args.csr, args.dense_t, args.out);
+    stu_csr_spmm(args.csr, args.dense_t, args.out);
 }
 
 bool sparse_spmm_check(void *stu_ctx, void *ref_ctx, lab_test_func naive_func) {

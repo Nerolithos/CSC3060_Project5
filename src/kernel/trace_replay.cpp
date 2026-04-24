@@ -92,7 +92,28 @@ void naive_trace_replay(uint64_t& out,
 void stu_trace_replay(uint64_t& out,
                       const std::vector<RequestRecord>& records,
                       const std::vector<uint32_t>& trace) {
-    // TODO: Implement your version, and call it in stu_trace_replay_wrapper
+    // Optimized with software prefetching to hide memory latency
+    uint64_t total = 0;
+    const uint64_t order_mix = 1315423911ull;
+    
+    const int prefetch_distance = 4;  // Prefetch this many iterations ahead
+    const size_t trace_size = trace.size();
+    
+    // Prefetch initial records
+    for (int i = 0; i < prefetch_distance && i < static_cast<int>(trace_size); ++i) {
+        __builtin_prefetch(&records[trace[i]], 0, 3);
+    }
+    
+    for (size_t i = 0; i < trace_size; ++i) {
+        // Prefetch the next record to hide latency
+        if (i + prefetch_distance < trace_size) {
+            __builtin_prefetch(&records[trace[i + prefetch_distance]], 0, 3);
+        }
+        
+        total = total * order_mix + trace_replay_cost(records[trace[i]]);
+    }
+
+    out = total;
 }
 
 void naive_trace_replay_wrapper(void* ctx) {

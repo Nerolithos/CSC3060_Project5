@@ -31,7 +31,10 @@ void naive_relu(std::span<float> data) {
 }
 
 void stu_relu(std::span<float> data) {
-    // TODO: Implement your version, and call it in stu_relu_wrapper
+    // Branchless ReLU using max - avoids branch misprediction
+    for (auto &value : data) {
+        value = std::max(value, 0.0f);
+    }
 }
 
 void naive_relu_wrapper(void *ctx) {

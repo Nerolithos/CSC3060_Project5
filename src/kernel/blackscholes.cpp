@@ -123,9 +123,65 @@ void stu_BlkSchls(std::vector<float> &CallOptionPrice,
                   const std::vector<float> &rate,
                   const std::vector<float> &volatility,
                   const std::vector<float> &time) {
-    // TODO:
-    // Implement your version for BlkSchls here, then 
-    // call it at stu_BlkSchls_wrapper()...
+    // Optimized Black-Scholes with inlined CNDF and reduced function calls
+    size_t n = spotPrice.size();
+    
+    for (size_t i = 0; i < n; ++i) {
+        // Compute d1 and d2
+        const float xSqrtTime = std::sqrt(time[i]);
+        const float xLogTerm = std::log(spotPrice[i] / strike[i]);
+        const float xPowerTerm = 0.5f * volatility[i] * volatility[i];
+        
+        const float xD1_numerator = (rate[i] + xPowerTerm) * time[i] + xLogTerm;
+        const float xDen = volatility[i] * xSqrtTime;
+        
+        const float xD1 = xD1_numerator / xDen;
+        const float xD2 = xD1 - xDen;
+        
+        // Inlined CNDF for d1
+        float d1_abs = (xD1 < 0.0f) ? -xD1 : xD1;
+        const float xNPrimeofX_d1 = std::exp(-0.5f * d1_abs * d1_abs) * inv_sqrt_2xPI;
+        const float k_d1 = 1.0f / (1.0f + p_val * d1_abs);
+        const float k2_d1 = k_d1 * k_d1;
+        const float k3_d1 = k2_d1 * k_d1;
+        const float k4_d1 = k3_d1 * k_d1;
+        const float k5_d1 = k4_d1 * k_d1;
+        
+        float local_d1 = k_d1 * coefficient_a1;
+        local_d1 += k2_d1 * coefficient_a2;
+        local_d1 += k3_d1 * coefficient_a3;
+        local_d1 += k4_d1 * coefficient_a4;
+        local_d1 += k5_d1 * coefficient_a5;
+        local_d1 = 1.0f - local_d1 * xNPrimeofX_d1;
+        
+        const float NofXd1 = (xD1 < 0.0f) ? (1.0f - local_d1) : local_d1;
+        
+        // Inlined CNDF for d2
+        float d2_abs = (xD2 < 0.0f) ? -xD2 : xD2;
+        const float xNPrimeofX_d2 = std::exp(-0.5f * d2_abs * d2_abs) * inv_sqrt_2xPI;
+        const float k_d2 = 1.0f / (1.0f + p_val * d2_abs);
+        const float k2_d2 = k_d2 * k_d2;
+        const float k3_d2 = k2_d2 * k_d2;
+        const float k4_d2 = k3_d2 * k_d2;
+        const float k5_d2 = k4_d2 * k_d2;
+        
+        float local_d2 = k_d2 * coefficient_a1;
+        local_d2 += k2_d2 * coefficient_a2;
+        local_d2 += k3_d2 * coefficient_a3;
+        local_d2 += k4_d2 * coefficient_a4;
+        local_d2 += k5_d2 * coefficient_a5;
+        local_d2 = 1.0f - local_d2 * xNPrimeofX_d2;
+        
+        const float NofXd2 = (xD2 < 0.0f) ? (1.0f - local_d2) : local_d2;
+        
+        // Calculate option prices
+        const float FutureValueX = strike[i] * std::exp(-rate[i] * time[i]);
+        CallOptionPrice[i] = (spotPrice[i] * NofXd1) - (FutureValueX * NofXd2);
+        
+        const float NegNofXd1 = 1.0f - NofXd1;
+        const float NegNofXd2 = 1.0f - NofXd2;
+        PutOptionPrice[i] = (FutureValueX * NegNofXd2) - (spotPrice[i] * NegNofXd1);
+    }
 }
 
 void naive_BlkSchls_wrapper(void *ctx) {

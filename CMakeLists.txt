@@ -29,3 +29,6 @@ target_link_libraries(single_bench PRIVATE kernels)
 
 add_executable(run_all src/main/run_all.cpp)
 target_link_libraries(run_all PRIVATE kernels)
+
+add_executable(run_stu src/main/run_stu.cpp)
+target_link_libraries(run_stu PRIVATE kernels)
