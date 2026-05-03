@@ -60,7 +60,8 @@ void stu_bitwise(std::span<std::int8_t> result, std::span<const std::int8_t> a,
     constexpr std::uint64_t kNotMaskLo = 0xA5A5A5A5A5A5A5A5ull;
     constexpr std::uint64_t kNotMaskHi = 0x3C3C3C3C3C3C3C3Cull;
 
-    const std::size_t n = std::min({result.size(), a.size(), b.size()});
+    std::size_t n = std::min(result.size(), a.size());
+    n = std::min(n, b.size());
     auto *dst = reinterpret_cast<std::uint8_t *>(result.data());
     const auto *pa = reinterpret_cast<const std::uint8_t *>(a.data());
     const auto *pb = reinterpret_cast<const std::uint8_t *>(b.data());
