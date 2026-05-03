@@ -57,14 +57,6 @@ static inline float fast_log(float x) {
     return log_m + static_cast<float>(exp) * 0.6931471805599453f;
 }
 
-static inline float fast_sqrt(float x) {
-    float y = std::bit_cast<float>((std::bit_cast<std::uint32_t>(x) >> 1) +
-                                   0x1fc00000u);
-    y = 0.5f * (y + x / y);
-    y = 0.5f * (y + x / y);
-    return y;
-}
-
 static inline float cndf_approx(float in) {
     const float ax = std::abs(in);
     const float nprime =
@@ -193,14 +185,22 @@ void stu_BlkSchls(std::vector<float> &CallOptionPrice,
                   const std::vector<float> &volatility,
                   const std::vector<float> &time) {
     const size_t n = spotPrice.size();
-    for (size_t i = 0; i < n; ++i) {
-        const float s = spotPrice[i];
-        const float x = strike[i];
-        const float r = rate[i];
-        const float v = volatility[i];
-        const float t = time[i];
+    const float *__restrict__ s_ptr = spotPrice.data();
+    const float *__restrict__ x_ptr = strike.data();
+    const float *__restrict__ r_ptr = rate.data();
+    const float *__restrict__ v_ptr = volatility.data();
+    const float *__restrict__ t_ptr = time.data();
+    float *__restrict__ call = CallOptionPrice.data();
+    float *__restrict__ put = PutOptionPrice.data();
 
-        const float sqrt_t = fast_sqrt(t);
+    for (size_t i = 0; i < n; ++i) {
+        const float s = s_ptr[i];
+        const float x = x_ptr[i];
+        const float r = r_ptr[i];
+        const float v = v_ptr[i];
+        const float t = t_ptr[i];
+
+        const float sqrt_t = std::sqrt(t);
         const float log_term = fast_log(s / x);
         const float den = v * sqrt_t;
         const float d1 = (log_term + (r + 0.5f * v * v) * t) / den;
@@ -210,8 +210,8 @@ void stu_BlkSchls(std::vector<float> &CallOptionPrice,
         const float nd2 = cndf_approx(d2);
         const float future = x * fast_exp(-r * t);
 
-        CallOptionPrice[i] = s * nd1 - future * nd2;
-        PutOptionPrice[i] = future * (1.0f - nd2) - s * (1.0f - nd1);
+        call[i] = s * nd1 - future * nd2;
+        put[i] = future * (1.0f - nd2) - s * (1.0f - nd1);
     }
 }
 

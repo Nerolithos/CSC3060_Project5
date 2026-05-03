@@ -92,7 +92,7 @@
 - 将 `CNDF` 和单个 option 的计算逻辑内联进主循环，消除函数调用开销。
 - 将 CNDF 多项式改为 Horner 形式，减少乘法数量和临时变量。
 - 使用 bit decomposition + 低阶多项式实现 `fast_log`，使用 range reduction + polynomial 实现 `fast_exp`。
-- 2026-05-03 更新：`sqrt(time)` 改为 bit 初值加两轮 Newton refinement 的 `fast_sqrt`，减少 libm 调用，同时保持 checker tolerance 内的精度。
+- 2026-05-03 更新：曾尝试 bit 初值加 Newton 的 `fast_sqrt`，但服务器反馈显示两次除法不如硬件 `sqrt` 划算，因此回退到 `std::sqrt`。主循环保留 raw pointer + `__restrict__` 风格访问，减少 vector 下标和别名保守性。
 
 效果：
 
@@ -206,6 +206,68 @@
 Geometric mean speedup: `9.340x`
 
 服务器复测命令：
+
+```bash
+rm -rf build-server
+cmake -S . -B build-server
+cmake --build build-server -j
+./build-server/run_stu
+```
+
+## 2026-05-03 Server Feedback Round 2
+
+第二次服务器截图结果：
+
+| Kernel | Server time ns | Baseline ns | Speedup |
+|---|---:|---:|---:|
+| Black-Scholes | 5,550,435 | 4,800,000 | 0.865x |
+| Sparse SpMM | 81,116,269 | 116,000,000 | 1.430x |
+| ReLU | 374,797 | 550,000 | 1.467x |
+| Bitwise | 256,091 | 250,000 | 0.976x |
+| MatMul | 71,389,489 | 88,000,000 | 1.233x |
+| Trace Replay | 1,533,027 | 3,400,000 | 2.218x |
+| Graph | 4,416,392 | 5,000,000 | 1.132x |
+| GRFF | 6,878,569 | 8,500,000 | 1.236x |
+| Image Proc | 35,362,131 | 43,000,000 | 1.216x |
+| Filter Gradient | 39,553,960 | 25,000,000 | 0.632x |
+
+判断：
+
+- Graph 与 Image Proc 已经过 baseline，本轮不继续冒险修改。
+- Bitwise 只差约 2.4%，当前 16-byte word-level 展开已经比较接近，继续展开可能增加寄存器压力，暂不作为主攻点。
+- Black-Scholes 仍略慢。服务器结果表明 `fast_sqrt` 无收益，因此回退到硬件 `std::sqrt`，并保留 `fast_log/fast_exp` 与 raw pointer 主循环。
+- Filter Gradient 仍是主要未过线项。尝试过两种方向：
+  - 行级 horizontal sum 预计算：主循环更简单，但需要写入 3 个整图临时数组，本地变慢，撤回。
+  - d/e/f/g/h/i Sobel 全滑动：减少 load，但寄存器压力太大，本地变慢，撤回。
+- 当前保留最稳的 a/b/c 三通道滑动列和 + Sobel 行指针展开版本。
+
+本轮最终保留改动：
+
+- `blackscholes.cpp`: 回退 `fast_sqrt`，保留 raw pointer loop 和完整精度的 `fast_log/fast_exp` 近似。
+- `filter_gradient.cpp`: 保留 a/b/c 3x3 box filter 的横向滑动列和；撤回额外临时数组和全 Sobel 滑动。
+
+本地验证：
+
+- `cmake --build build -j`: passed
+- `./build/run_stu`: all passed
+- 独立 student/reference context 校验 `blackscholes/filter_gradient/bitwise/image_proc/graph`: passed
+
+本地最新 `run_stu` 结果：
+
+| Kernel | Status | Avg time ns | Speedup vs baseline |
+|---|---:|---:|---:|
+| Black-Scholes | PASS | 206,195 | 23.279x |
+| Sparse SpMM | PASS | 23,039,866 | 5.035x |
+| ReLU | PASS | 83,797 | 6.563x |
+| Bitwise | PASS | 38,625 | 6.472x |
+| MatMul | PASS | 10,532,246 | 8.355x |
+| Trace Replay | PASS | 1,043,824 | 3.257x |
+| Graph | PASS | 827,579 | 6.042x |
+| GRFF | PASS | 567,750 | 14.971x |
+| Image Proc | PASS | 5,029,256 | 8.550x |
+| Filter Gradient | PASS | 4,810,833 | 5.197x |
+
+服务器复测命令不变：
 
 ```bash
 rm -rf build-server
