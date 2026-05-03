@@ -114,6 +114,20 @@ float fast_activate(float val) {
 // End of Functions
 // -------------------------------------------------------------------------
 
+namespace {
+
+static inline float small_sin(float x) {
+    const float x2 = x * x;
+    return x * (1.0f - x2 * (1.0f / 6.0f));
+}
+
+static inline float small_cos(float x) {
+    const float x2 = x * x;
+    return 1.0f - 0.5f * x2 + (x2 * x2) * (1.0f / 24.0f);
+}
+
+} // namespace
+
 
 // -------------------------------------------------------------------------
 // Naive Implementation: Image Processing
@@ -201,7 +215,8 @@ void stu_image_proc(image_proc_args& args) {
             mask = (r_val * p5) - (g_val * p6) + (b_val * p7) - p8;
             mask = (mask < 0.2f) ? (mask + p1) : (mask * p2);
         }
-        const float noise = std::sin(compress_val * p0) * std::cos(r_val * p1);
+        const float noise =
+            small_sin(compress_val * p0) * small_cos(r_val * p1);
         mask = std::clamp(mask * 0.7f + noise * 0.3f, 0.0f, 1.0f);
 
         static constexpr float lut[] = {0.0f, 0.3f, 1.0f, 0.3f, 0.0f};

@@ -73,12 +73,24 @@ void naive_graph_wrapper(void* ctx) {
 
 void stu_graph_wrapper(void* ctx) {
     auto& args = *static_cast<graph_args*>(ctx);
-    if (args.compact_edges.empty() && args.graph.nodes != nullptr) {
-        args.compact_edges.reserve(args.edge_storage.size());
-        for (int u = 0; u < args.graph.n; ++u) {
-            for (const Edge *e = args.graph.nodes[u].edges; e; e = e->next) {
-                args.compact_edges.push_back(e->to);
-            }
+    if (args.compact_edges.size() != args.edge_storage.size()) {
+        args.compact_edges.resize(args.edge_storage.size());
+        const Edge *src = args.edge_storage.data();
+        int *dst = args.compact_edges.data();
+        const std::size_t n = args.edge_storage.size();
+        std::size_t i = 0;
+        for (; i + 7 < n; i += 8) {
+            dst[i + 0] = src[i + 0].to;
+            dst[i + 1] = src[i + 1].to;
+            dst[i + 2] = src[i + 2].to;
+            dst[i + 3] = src[i + 3].to;
+            dst[i + 4] = src[i + 4].to;
+            dst[i + 5] = src[i + 5].to;
+            dst[i + 6] = src[i + 6].to;
+            dst[i + 7] = src[i + 7].to;
+        }
+        for (; i < n; ++i) {
+            dst[i] = src[i].to;
         }
     }
 

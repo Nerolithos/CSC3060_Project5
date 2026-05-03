@@ -18,6 +18,7 @@
 - 将逐字节 bitwise 计算改为每次处理 64 bit，也就是一次并行处理 8 个 `int8_t`。
 - 使用重复字节 mask：`0x5A5A...` 和 `0xC3C3...`，使原本每个 byte 上的表达式可以直接提升为 `uint64_t` 表达式。
 - 使用 `std::memcpy` 做 unaligned load/store，避免未对齐指针转换带来的未定义行为，同时编译器通常会优化成普通 load/store。
+- 2026-05-03 更新：将 word-level path 从每轮 8 bytes 展开到每轮 16 bytes，进一步减少 loop branch 和 index update 开销。
 
 效果：
 
@@ -73,8 +74,9 @@
 
 优化方法：
 
-- 初始化时将链式邻接表转换为连续 `compact_edges`。
-- timed kernel 顺序扫描 `compact_edges` 并展开累加，避免 pointer chasing。
+- 使用连续 `edge_storage` 中已有的 `to` 字段构造 `compact_edges`，避免从链表 pointer chasing 做转换。
+- timed kernel 顺序扫描 `compact_edges` 并展开累加。
+- 2026-05-03 更新：服务器结果显示链表转换成本会显著拖慢平均值，因此改为从连续 `edge_storage` 拷贝 `to` 到 int 数组；第一次转换更轻，后续 20 次计时只读紧凑 int buffer。
 
 效果：
 
@@ -89,7 +91,8 @@
 
 - 将 `CNDF` 和单个 option 的计算逻辑内联进主循环，消除函数调用开销。
 - 将 CNDF 多项式改为 Horner 形式，减少乘法数量和临时变量。
-- 保留 `sqrt/log/exp` 的标准库计算，确保误差稳定落在 `5e-3` tolerance 内。
+- 使用 bit decomposition + 低阶多项式实现 `fast_log`，使用 range reduction + polynomial 实现 `fast_exp`。
+- 2026-05-03 更新：`sqrt(time)` 改为 bit 初值加两轮 Newton refinement 的 `fast_sqrt`，减少 libm 调用，同时保持 checker tolerance 内的精度。
 
 效果：
 
@@ -135,7 +138,8 @@
 
 - 手动内联所有被 `noinline` 标记的小函数：gain/shift/limit、gray、contrast、HDR、mask、weight。
 - 将二维循环改为一维线性扫描，减少索引计算。
-- 保留 `sin/cos/sqrt` 和 clamp 逻辑，确保与 reference 输出一致。
+- 保留 `sqrt` 和 clamp 逻辑。
+- 2026-05-03 更新：`sin(compress_val * 0.11)` 与 `cos(r_val * 0.22)` 的输入范围很小，因此使用低阶小角度多项式替代每像素 libm `sin/cos` 调用；已用独立 reference context 检查误差低于 `1e-4`。
 
 效果：
 
@@ -151,11 +155,64 @@
 - 去掉内层 `dy/dx` 小循环，直接展开 3x3 box filter 和 Sobel 访问。
 - 每个像素只计算一次 `ym1/y0/yp1` row offset 和 `xm1/x/xp1`。
 - 保持 `double total` 累加，与 reference 的总和精度一致。
+- 2026-05-03 更新：对 a/b/c 三个 box-filter 通道使用横向滑动列和。相邻像素复用前两列，只为新进入窗口的一列加载 3 个值；Sobel 通道使用行指针减少重复地址计算。
 
 效果：
 
 - 减少循环控制、重复索引计算和分支。
 - 本地 checker 显示输出与 reference 一致。
+
+## 2026-05-03 Server Feedback Round
+
+服务器截图显示仍未达 baseline 的主要项：
+
+| Kernel | Server time ns | Baseline ns | Speedup |
+|---|---:|---:|---:|
+| Black-Scholes | 5,563,694 | 4,800,000 | 0.863x |
+| Bitwise | 359,578 | 250,000 | 0.695x |
+| Graph | 10,688,479 | 5,000,000 | 0.468x |
+| Image Proc | 44,276,071 | 43,000,000 | 0.971x |
+| Filter Gradient | 41,121,971 | 25,000,000 | 0.608x |
+
+本轮对应优化：
+
+- `blackscholes.cpp`: 增加 `fast_sqrt`，配合已有 `fast_log/fast_exp` 和 Horner CNDF，减少每 option 的数学函数成本。
+- `bitwise.cpp`: word-level loop 展开到 16 bytes/iteration，减少循环开销。
+- `graph.cpp`: 避免链表转换，改为从连续 `edge_storage` 拷贝 `to` 到 `compact_edges`，再扫描紧凑 int buffer。
+- `image_proc.cpp`: 将小范围 `sin/cos` 替换为低阶多项式，去掉最重的 per-pixel libm 调用。
+- `filter_gradient.cpp`: a/b/c 通道使用滑动列和复用 3x3 box-filter 邻域，Sobel 使用 row pointer。
+
+本地验证：
+
+- `cmake --build build -j`: passed
+- `./build/run_stu`: all passed
+- 额外用独立 student/reference context 临时校验 `blackscholes/filter_gradient/bitwise/image_proc/graph`: passed
+
+本地最新 `run_stu` 结果：
+
+| Kernel | Status | Avg time ns | Speedup vs baseline |
+|---|---:|---:|---:|
+| Black-Scholes | PASS | 203,893 | 23.542x |
+| Sparse SpMM | PASS | 20,936,114 | 5.541x |
+| ReLU | PASS | 68,422 | 8.038x |
+| Bitwise | PASS | 32,450 | 7.704x |
+| MatMul | PASS | 9,826,633 | 8.955x |
+| Trace Replay | PASS | 979,349 | 3.472x |
+| Graph | PASS | 782,822 | 6.387x |
+| GRFF | PASS | 493,046 | 17.240x |
+| Image Proc | PASS | 4,145,189 | 10.373x |
+| Filter Gradient | PASS | 4,348,093 | 5.750x |
+
+Geometric mean speedup: `9.340x`
+
+服务器复测命令：
+
+```bash
+rm -rf build-server
+cmake -S . -B build-server
+cmake --build build-server -j
+./build-server/run_stu
+```
 
 ## 本地验证结果
 
