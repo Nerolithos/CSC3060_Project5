@@ -1,0 +1,28 @@
+Benchmark setup
+	Black-Scholes options: 81920
+	Sparse A (CSR): 2048 x 2048, nnz=24455
+	ReLU: vector length=1024000
+	Bitwise: vector length=1024000
+	MatMul: n=512
+	Trace Replay: records=65536, trace_length=1048576
+	Graph: node_count=1024000, avg_degree=8
+	GRFF: feature size=1024000
+	Image Proc: 1024 x 1000
+	Filter Gradient: 1024 x 1024
+
+Running Benchmarks...
+-----------------------------------------------------------------------
+Benchmark                Status          Nanoseconds     Speedup
+-----------------------------------------------------------------------
+Black-Scholes (Naive)    [1;32mPASSED[0m         725291 ns      6.618x
+Sparse SpMM (Naive)      [1;32mPASSED[0m       14910422 ns      7.780x
+ReLU (Naive)             [1;32mPASSED[0m         287841 ns      1.911x
+Bitwise (Naive)          [1;32mPASSED[0m          41070 ns      6.087x
+MatMul (Naive)           [1;32mPASSED[0m       70601739 ns      1.246x
+Trace Replay (Naive)     [1;32mPASSED[0m        1723500 ns      1.973x
+Graph (Naive)            [1;32mPASSED[0m        2429943 ns      2.058x
+GRFF (Naive)             [1;32mPASSED[0m        1188397 ns      7.152x
+Image Proc (Naive)       [1;32mPASSED[0m       11646725 ns      3.692x
+Filter Gradient (Naive)  [1;32mPASSED[0m        6521016 ns      3.834x
+
+Geometric mean speedup: 3.537x
