@@ -66,6 +66,26 @@ void stu_bitwise(std::span<std::int8_t> result, std::span<const std::int8_t> a,
     const auto *pb = reinterpret_cast<const std::uint8_t *>(b.data());
 
     std::size_t i = 0;
+    for (; i + 16 <= n; i += 16) {
+        std::uint64_t ua0;
+        std::uint64_t ub0;
+        std::uint64_t ua1;
+        std::uint64_t ub1;
+        std::memcpy(&ua0, pa + i, sizeof(ua0));
+        std::memcpy(&ub0, pb + i, sizeof(ub0));
+        std::memcpy(&ua1, pa + i + 8, sizeof(ua1));
+        std::memcpy(&ub1, pb + i + 8, sizeof(ub1));
+
+        const std::uint64_t either0 = ua0 | ub0;
+        const std::uint64_t either1 = ua1 | ub1;
+        const std::uint64_t out0 =
+            (~either0 & kNotMaskLo) | (either0 & kNotMaskHi);
+        const std::uint64_t out1 =
+            (~either1 & kNotMaskLo) | (either1 & kNotMaskHi);
+        std::memcpy(dst + i, &out0, sizeof(out0));
+        std::memcpy(dst + i + 8, &out1, sizeof(out1));
+    }
+
     for (; i + sizeof(std::uint64_t) <= n; i += sizeof(std::uint64_t)) {
         std::uint64_t ua;
         std::uint64_t ub;

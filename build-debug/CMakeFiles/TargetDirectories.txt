@@ -1,0 +1,5 @@
+/Users/bob/Documents/GitHub/CSC3060_Project5/build-debug/CMakeFiles/kernels.dir
+/Users/bob/Documents/GitHub/CSC3060_Project5/build-debug/CMakeFiles/single_bench.dir
+/Users/bob/Documents/GitHub/CSC3060_Project5/build-debug/CMakeFiles/run_all.dir
+/Users/bob/Documents/GitHub/CSC3060_Project5/build-debug/CMakeFiles/edit_cache.dir
+/Users/bob/Documents/GitHub/CSC3060_Project5/build-debug/CMakeFiles/rebuild_cache.dir

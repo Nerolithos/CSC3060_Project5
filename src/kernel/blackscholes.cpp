@@ -57,6 +57,14 @@ static inline float fast_log(float x) {
     return log_m + static_cast<float>(exp) * 0.6931471805599453f;
 }
 
+static inline float fast_sqrt(float x) {
+    float y = std::bit_cast<float>((std::bit_cast<std::uint32_t>(x) >> 1) +
+                                   0x1fc00000u);
+    y = 0.5f * (y + x / y);
+    y = 0.5f * (y + x / y);
+    return y;
+}
+
 static inline float cndf_approx(float in) {
     const float ax = std::abs(in);
     const float nprime =
@@ -192,7 +200,7 @@ void stu_BlkSchls(std::vector<float> &CallOptionPrice,
         const float v = volatility[i];
         const float t = time[i];
 
-        const float sqrt_t = std::sqrt(t);
+        const float sqrt_t = fast_sqrt(t);
         const float log_term = fast_log(s / x);
         const float den = v * sqrt_t;
         const float d1 = (log_term + (r + 0.5f * v * v) * t) / den;
