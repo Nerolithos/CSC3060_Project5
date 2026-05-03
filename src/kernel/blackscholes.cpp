@@ -72,6 +72,27 @@ static inline float cndf_approx(float in) {
     return (in < 0.0f) ? (1.0f - local) : local;
 }
 
+[[gnu::always_inline]] static inline void blackscholes_fast_one(float &call,
+                                                                float &put,
+                                                                float s,
+                                                                float x,
+                                                                float r,
+                                                                float v,
+                                                                float t) {
+    const float sqrt_t = std::sqrt(t);
+    const float log_term = fast_log(s / x);
+    const float den = v * sqrt_t;
+    const float d1 = (log_term + (r + 0.5f * v * v) * t) / den;
+    const float d2 = d1 - den;
+
+    const float nd1 = cndf_approx(d1);
+    const float nd2 = cndf_approx(d2);
+    const float future = x * fast_exp(-r * t);
+
+    call = s * nd1 - future * nd2;
+    put = future * (1.0f - nd2) - s * (1.0f - nd1);
+}
+
 } // namespace
 
 void initialize_blackscholes(blackscholes_args &args,
@@ -193,25 +214,31 @@ void stu_BlkSchls(std::vector<float> &CallOptionPrice,
     float *__restrict__ call = CallOptionPrice.data();
     float *__restrict__ put = PutOptionPrice.data();
 
-    for (size_t i = 0; i < n; ++i) {
-        const float s = s_ptr[i];
-        const float x = x_ptr[i];
-        const float r = r_ptr[i];
-        const float v = v_ptr[i];
-        const float t = t_ptr[i];
-
-        const float sqrt_t = std::sqrt(t);
-        const float log_term = fast_log(s / x);
-        const float den = v * sqrt_t;
-        const float d1 = (log_term + (r + 0.5f * v * v) * t) / den;
-        const float d2 = d1 - den;
-
-        const float nd1 = cndf_approx(d1);
-        const float nd2 = cndf_approx(d2);
-        const float future = x * fast_exp(-r * t);
-
-        call[i] = s * nd1 - future * nd2;
-        put[i] = future * (1.0f - nd2) - s * (1.0f - nd1);
+    size_t i = 0;
+    for (; i + 1 < n; i += 2) {
+        blackscholes_fast_one(call[i],
+                              put[i],
+                              s_ptr[i],
+                              x_ptr[i],
+                              r_ptr[i],
+                              v_ptr[i],
+                              t_ptr[i]);
+        blackscholes_fast_one(call[i + 1],
+                              put[i + 1],
+                              s_ptr[i + 1],
+                              x_ptr[i + 1],
+                              r_ptr[i + 1],
+                              v_ptr[i + 1],
+                              t_ptr[i + 1]);
+    }
+    for (; i < n; ++i) {
+        blackscholes_fast_one(call[i],
+                              put[i],
+                              s_ptr[i],
+                              x_ptr[i],
+                              r_ptr[i],
+                              v_ptr[i],
+                              t_ptr[i]);
     }
 }
 

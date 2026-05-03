@@ -303,3 +303,44 @@ cmake --build build -j
 Geometric mean speedup: `5.600x`
 
 注意：以上数据来自本地机器，不可直接作为正式评分数据；正式报告需要在课程服务器上重新运行并记录。
+
+## 2026-05-03 Server Feedback Round 3
+
+第三次服务器截图结果：
+
+| Kernel | Server time ns | Baseline ns | Speedup |
+|---|---:|---:|---:|
+| Black-Scholes | 5,808,324 | 4,800,000 | 0.826x |
+| Filter Gradient | 40,140,398 | 25,000,000 | 0.623x |
+
+本轮只修改 `blackscholes.cpp` 和 `filter_gradient.cpp`。
+
+Black-Scholes 判断：
+
+- 当前瓶颈仍是每个 option 的 `sqrt/log/exp/CNDF` 组合。之前降低 `fast_exp/fast_log` 多项式阶数会破坏 checker 精度，因此不再继续牺牲数学近似精度。
+- 本轮将单个 option 的快速路径抽成 `blackscholes_fast_one` 强内联 helper，并在主循环做 2-way unroll。每个 option 的计算公式和近似函数保持不变，只减少循环控制开销，并让编译器更容易交错调度两个独立 option 的数学运算。本地测试显示普通 `inline` 在当前编译设置下可能没有稳定内联，因此使用 GCC/Clang 支持的 `always_inline` 属性。
+
+Filter Gradient 判断：
+
+- 热循环里 a/b/c 的 3x3 平均值原来使用 `constexpr double inv9`，会让 `(float sum) * inv9` 提升为 double 运算后再转回 float；这在 1024x1024 的内层循环里是不必要的成本。
+- 本轮改为 `constexpr float inv9 = 1.0f / 9.0f`，保持与 naive 中平均值的 float 输出一致。
+- 同时将每一行的像素贡献先累加到 `row_total`，行末再合并到 `total`，缩短跨整张图的 double 累加依赖链。输出仍为最终 float，checker 容差下应保持正确。
+
+预期收益：
+
+- Black-Scholes：主要改善 loop overhead 和独立数学计算的 instruction scheduling。
+- Filter Gradient：减少热循环中的 double promotion，并降低总和累加的长依赖链，对真实 CPU pipeline 更友好。
+
+本地验证：
+
+- `cmake --build build -j`: passed
+- `./build/run_stu`: all passed
+
+本地 `run_stu` 观测值：
+
+| Kernel | Status | Avg time ns | Speedup vs baseline |
+|---|---:|---:|---:|
+| Black-Scholes | PASS | 204,704 | 23.448x |
+| Filter Gradient | PASS | 3,528,906 | 7.084x |
+
+说明：本地机器和课程服务器差异很大，正式判断仍以服务器 `run_stu` 为准。
