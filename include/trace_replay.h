@@ -21,6 +21,7 @@ struct trace_replay_args {
     uint64_t out = 0;
     std::vector<RequestRecord> records;
     std::vector<uint32_t> trace;
+    std::vector<uint64_t> record_costs;
     // TODO: You may want to add new params at the end...
 };
 

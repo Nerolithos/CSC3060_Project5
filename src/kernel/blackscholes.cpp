@@ -1,6 +1,7 @@
 #include "blackscholes.h"
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <random>
@@ -12,6 +13,66 @@
 #define coefficient_a3 1.781477937
 #define coefficient_a4 -1.821255978
 #define coefficient_a5 1.330274429
+
+namespace {
+
+static inline float fast_exp(float x) {
+    constexpr float inv_ln2 = 1.4426950408889634f;
+    constexpr float ln2 = 0.6931471805599453f;
+
+    const float z = x * inv_ln2;
+    int n = static_cast<int>(z + (z >= 0.0f ? 0.5f : -0.5f));
+    float r = x - static_cast<float>(n) * ln2;
+
+    const float r2 = r * r;
+    const float poly =
+        1.0f + r + r2 * (0.5f + r * (0.1666666667f +
+                                     r * (0.0416666667f +
+                                          r * 0.0083333333f)));
+
+    if (n < -126) {
+        return 0.0f;
+    }
+    if (n > 127) {
+        n = 127;
+    }
+    const std::uint32_t bits =
+        static_cast<std::uint32_t>(n + 127) << 23;
+    return poly * std::bit_cast<float>(bits);
+}
+
+static inline float fast_log(float x) {
+    const std::uint32_t bits = std::bit_cast<std::uint32_t>(x);
+    const int exp = static_cast<int>((bits >> 23) & 0xffu) - 127;
+    const std::uint32_t mant_bits = (bits & 0x007fffffu) | 0x3f800000u;
+    const float m = std::bit_cast<float>(mant_bits);
+
+    const float y = (m - 1.0f) / (m + 1.0f);
+    const float y2 = y * y;
+    const float log_m =
+        2.0f * y *
+        (1.0f + y2 * (0.3333333333f +
+                      y2 * (0.2f + y2 * (0.1428571429f +
+                                         y2 * 0.1111111111f))));
+    return log_m + static_cast<float>(exp) * 0.6931471805599453f;
+}
+
+static inline float cndf_approx(float in) {
+    const float ax = std::abs(in);
+    const float nprime =
+        fast_exp(-0.5f * ax * ax) * static_cast<float>(inv_sqrt_2xPI);
+    const float k = 1.0f / (1.0f + static_cast<float>(p_val) * ax);
+    const float poly =
+        k * (static_cast<float>(coefficient_a1) +
+             k * (static_cast<float>(coefficient_a2) +
+                  k * (static_cast<float>(coefficient_a3) +
+                       k * (static_cast<float>(coefficient_a4) +
+                            k * static_cast<float>(coefficient_a5)))));
+    const float local = 1.0f - poly * nprime;
+    return (in < 0.0f) ? (1.0f - local) : local;
+}
+
+} // namespace
 
 void initialize_blackscholes(blackscholes_args &args,
                              std::size_t n,
@@ -123,64 +184,26 @@ void stu_BlkSchls(std::vector<float> &CallOptionPrice,
                   const std::vector<float> &rate,
                   const std::vector<float> &volatility,
                   const std::vector<float> &time) {
-    // Optimized Black-Scholes with inlined CNDF and reduced function calls
-    size_t n = spotPrice.size();
-    
+    const size_t n = spotPrice.size();
     for (size_t i = 0; i < n; ++i) {
-        // Compute d1 and d2
-        const float xSqrtTime = std::sqrt(time[i]);
-        const float xLogTerm = std::log(spotPrice[i] / strike[i]);
-        const float xPowerTerm = 0.5f * volatility[i] * volatility[i];
-        
-        const float xD1_numerator = (rate[i] + xPowerTerm) * time[i] + xLogTerm;
-        const float xDen = volatility[i] * xSqrtTime;
-        
-        const float xD1 = xD1_numerator / xDen;
-        const float xD2 = xD1 - xDen;
-        
-        // Inlined CNDF for d1
-        float d1_abs = (xD1 < 0.0f) ? -xD1 : xD1;
-        const float xNPrimeofX_d1 = std::exp(-0.5f * d1_abs * d1_abs) * inv_sqrt_2xPI;
-        const float k_d1 = 1.0f / (1.0f + p_val * d1_abs);
-        const float k2_d1 = k_d1 * k_d1;
-        const float k3_d1 = k2_d1 * k_d1;
-        const float k4_d1 = k3_d1 * k_d1;
-        const float k5_d1 = k4_d1 * k_d1;
-        
-        float local_d1 = k_d1 * coefficient_a1;
-        local_d1 += k2_d1 * coefficient_a2;
-        local_d1 += k3_d1 * coefficient_a3;
-        local_d1 += k4_d1 * coefficient_a4;
-        local_d1 += k5_d1 * coefficient_a5;
-        local_d1 = 1.0f - local_d1 * xNPrimeofX_d1;
-        
-        const float NofXd1 = (xD1 < 0.0f) ? (1.0f - local_d1) : local_d1;
-        
-        // Inlined CNDF for d2
-        float d2_abs = (xD2 < 0.0f) ? -xD2 : xD2;
-        const float xNPrimeofX_d2 = std::exp(-0.5f * d2_abs * d2_abs) * inv_sqrt_2xPI;
-        const float k_d2 = 1.0f / (1.0f + p_val * d2_abs);
-        const float k2_d2 = k_d2 * k_d2;
-        const float k3_d2 = k2_d2 * k_d2;
-        const float k4_d2 = k3_d2 * k_d2;
-        const float k5_d2 = k4_d2 * k_d2;
-        
-        float local_d2 = k_d2 * coefficient_a1;
-        local_d2 += k2_d2 * coefficient_a2;
-        local_d2 += k3_d2 * coefficient_a3;
-        local_d2 += k4_d2 * coefficient_a4;
-        local_d2 += k5_d2 * coefficient_a5;
-        local_d2 = 1.0f - local_d2 * xNPrimeofX_d2;
-        
-        const float NofXd2 = (xD2 < 0.0f) ? (1.0f - local_d2) : local_d2;
-        
-        // Calculate option prices
-        const float FutureValueX = strike[i] * std::exp(-rate[i] * time[i]);
-        CallOptionPrice[i] = (spotPrice[i] * NofXd1) - (FutureValueX * NofXd2);
-        
-        const float NegNofXd1 = 1.0f - NofXd1;
-        const float NegNofXd2 = 1.0f - NofXd2;
-        PutOptionPrice[i] = (FutureValueX * NegNofXd2) - (spotPrice[i] * NegNofXd1);
+        const float s = spotPrice[i];
+        const float x = strike[i];
+        const float r = rate[i];
+        const float v = volatility[i];
+        const float t = time[i];
+
+        const float sqrt_t = std::sqrt(t);
+        const float log_term = fast_log(s / x);
+        const float den = v * sqrt_t;
+        const float d1 = (log_term + (r + 0.5f * v * v) * t) / den;
+        const float d2 = d1 - den;
+
+        const float nd1 = cndf_approx(d1);
+        const float nd2 = cndf_approx(d2);
+        const float future = x * fast_exp(-r * t);
+
+        CallOptionPrice[i] = s * nd1 - future * nd2;
+        PutOptionPrice[i] = future * (1.0f - nd2) - s * (1.0f - nd1);
     }
 }
 

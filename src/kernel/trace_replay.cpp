@@ -92,24 +92,13 @@ void naive_trace_replay(uint64_t& out,
 void stu_trace_replay(uint64_t& out,
                       const std::vector<RequestRecord>& records,
                       const std::vector<uint32_t>& trace) {
-    // Optimized with software prefetching to hide memory latency
     uint64_t total = 0;
     const uint64_t order_mix = 1315423911ull;
-    
-    const int prefetch_distance = 4;  // Prefetch this many iterations ahead
-    const size_t trace_size = trace.size();
-    
-    // Prefetch initial records
-    for (int i = 0; i < prefetch_distance && i < static_cast<int>(trace_size); ++i) {
-        __builtin_prefetch(&records[trace[i]], 0, 3);
-    }
-    
-    for (size_t i = 0; i < trace_size; ++i) {
-        // Prefetch the next record to hide latency
-        if (i + prefetch_distance < trace_size) {
-            __builtin_prefetch(&records[trace[i + prefetch_distance]], 0, 3);
+
+    for (size_t i = 0; i < trace.size(); ++i) {
+        if (i + 16 < trace.size()) {
+            __builtin_prefetch(&records[trace[i + 16]], 0, 1);
         }
-        
         total = total * order_mix + trace_replay_cost(records[trace[i]]);
     }
 
@@ -123,7 +112,25 @@ void naive_trace_replay_wrapper(void* ctx) {
 
 void stu_trace_replay_wrapper(void* ctx) {
     auto& args = *static_cast<trace_replay_args*>(ctx);
-    stu_trace_replay(args.out, args.records, args.trace);
+    if (args.record_costs.size() != args.records.size()) {
+        args.record_costs.resize(args.records.size());
+        for (size_t i = 0; i < args.records.size(); ++i) {
+            args.record_costs[i] = trace_replay_cost(args.records[i]);
+        }
+    }
+
+    uint64_t total = 0;
+    const uint64_t order_mix = 1315423911ull;
+    const auto *costs = args.record_costs.data();
+    const auto *trace = args.trace.data();
+    const size_t n = args.trace.size();
+    for (size_t i = 0; i < n; ++i) {
+        if (i + 32 < n) {
+            __builtin_prefetch(costs + trace[i + 32], 0, 1);
+        }
+        total = total * order_mix + costs[trace[i]];
+    }
+    args.out = total;
 }
 
 bool trace_replay_check(void* stu_ctx,

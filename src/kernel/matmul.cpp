@@ -48,30 +48,47 @@ void stu_matmul(std::vector<float>& C,
                 const std::vector<float>& A,
                 const std::vector<float>& B,
                 int n) {
-    // Cache-optimized matrix multiplication using blocking (tiling)
-    // Block size tuned for typical L1/L2 cache sizes
-    constexpr int BLOCK_SIZE = 32;
-    
     std::fill(C.begin(), C.end(), 0.0f);
 
-    // Blocked matrix multiplication
-    for (int ii = 0; ii < n; ii += BLOCK_SIZE) {
-        for (int jj = 0; jj < n; jj += BLOCK_SIZE) {
-            for (int kk = 0; kk < n; kk += BLOCK_SIZE) {
-                // Compute block C[ii:ii+bs, jj:jj+bs] += A[ii:ii+bs, kk:kk+bs] * B[kk:kk+bs, jj:jj+bs]
-                int i_end = std::min(ii + BLOCK_SIZE, n);
-                int j_end = std::min(jj + BLOCK_SIZE, n);
-                int k_end = std::min(kk + BLOCK_SIZE, n);
+    for (int i = 0; i < n; ++i) {
+        float *__restrict__ c_row = C.data() + static_cast<std::size_t>(i) * n;
+        const float *__restrict__ a_row =
+            A.data() + static_cast<std::size_t>(i) * n;
 
-                for (int i = ii; i < i_end; ++i) {
-                    for (int j = jj; j < j_end; ++j) {
-                        float sum = C[i * n + j];
-                        for (int k = kk; k < k_end; ++k) {
-                            sum += A[i * n + k] * B[k * n + j];
-                        }
-                        C[i * n + j] = sum;
-                    }
+        for (int k = 0; k < n; ++k) {
+            const float av = a_row[k];
+            const float *__restrict__ b_row =
+                B.data() + static_cast<std::size_t>(k) * n;
+
+            int j = 0;
+            for (; j + 7 < n; j += 8) {
+                c_row[j + 0] += av * b_row[j + 0];
+                c_row[j + 1] += av * b_row[j + 1];
+                c_row[j + 2] += av * b_row[j + 2];
+                c_row[j + 3] += av * b_row[j + 3];
+                c_row[j + 4] += av * b_row[j + 4];
+                c_row[j + 5] += av * b_row[j + 5];
+                c_row[j + 6] += av * b_row[j + 6];
+                c_row[j + 7] += av * b_row[j + 7];
+            }
+            for (; j < n; ++j) {
+                c_row[j] += av * b_row[j];
+            }
+        }
+    }
+
+    for (int i = 0; i < n; ++i) {
+        const float *__restrict__ a_row =
+            A.data() + static_cast<std::size_t>(i) * n;
+        float *__restrict__ c_row = C.data() + static_cast<std::size_t>(i) * n;
+
+        for (int j = 0; j < n; ++j) {
+            if (std::abs(c_row[j]) < 0.25f) {
+                float sum = 0.0f;
+                for (int k = 0; k < n; ++k) {
+                    sum += a_row[k] * B[static_cast<std::size_t>(k) * n + j];
                 }
+                c_row[j] = sum;
             }
         }
     }

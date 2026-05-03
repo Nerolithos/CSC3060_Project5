@@ -31,9 +31,21 @@ void naive_relu(std::span<float> data) {
 }
 
 void stu_relu(std::span<float> data) {
-    // Branchless ReLU using max - avoids branch misprediction
-    for (auto &value : data) {
-        value = std::max(value, 0.0f);
+    float *ptr = data.data();
+    const std::size_t n = data.size();
+    std::size_t i = 0;
+    for (; i + 7 < n; i += 8) {
+        ptr[i + 0] = std::max(ptr[i + 0], 0.0f);
+        ptr[i + 1] = std::max(ptr[i + 1], 0.0f);
+        ptr[i + 2] = std::max(ptr[i + 2], 0.0f);
+        ptr[i + 3] = std::max(ptr[i + 3], 0.0f);
+        ptr[i + 4] = std::max(ptr[i + 4], 0.0f);
+        ptr[i + 5] = std::max(ptr[i + 5], 0.0f);
+        ptr[i + 6] = std::max(ptr[i + 6], 0.0f);
+        ptr[i + 7] = std::max(ptr[i + 7], 0.0f);
+    }
+    for (; i < n; ++i) {
+        ptr[i] = std::max(ptr[i], 0.0f);
     }
 }
 

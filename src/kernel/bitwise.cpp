@@ -57,49 +57,31 @@ void naive_bitwise(std::span<std::int8_t> result,
 // TODO: Optimize the bitwise function
 void stu_bitwise(std::span<std::int8_t> result, std::span<const std::int8_t> a,
                  std::span<const std::int8_t> b) {
-    // Optimize by processing multiple values in parallel using 64-bit registers
-    // This allows us to process 8 int8 values at once
-    constexpr std::uint8_t kMaskLo = 0x5Au;
-    constexpr std::uint8_t kMaskHi = 0xC3u;
-    
-    // Create 64-bit masks for parallel operation
-    constexpr std::uint64_t kMaskLo64 = 0x5A5A5A5A5A5A5A5AUL;
-    constexpr std::uint64_t kMaskHi64 = 0xC3C3C3C3C3C3C3C3UL;
+    constexpr std::uint64_t kNotMaskLo = 0xA5A5A5A5A5A5A5A5ull;
+    constexpr std::uint64_t kNotMaskHi = 0x3C3C3C3C3C3C3C3Cull;
 
     const std::size_t n = std::min({result.size(), a.size(), b.size()});
+    auto *dst = reinterpret_cast<std::uint8_t *>(result.data());
+    const auto *pa = reinterpret_cast<const std::uint8_t *>(a.data());
+    const auto *pb = reinterpret_cast<const std::uint8_t *>(b.data());
+
     std::size_t i = 0;
+    for (; i + sizeof(std::uint64_t) <= n; i += sizeof(std::uint64_t)) {
+        std::uint64_t ua;
+        std::uint64_t ub;
+        std::memcpy(&ua, pa + i, sizeof(ua));
+        std::memcpy(&ub, pb + i, sizeof(ub));
 
-    // Process 8 elements at a time using 64-bit parallelism
-    const std::size_t chunk_size = 8;
-    for (; i + chunk_size <= n; i += chunk_size) {
-        std::uint64_t ua, ub;
-        std::memcpy(&ua, &a[i], 8);
-        std::memcpy(&ub, &b[i], 8);
-
-        std::uint64_t shared = ua & ub;
-        std::uint64_t either = ua | ub;
-        std::uint64_t diff = ua ^ ub;
-        std::uint64_t mixed0 = (diff & kMaskLo64) | (~shared & ~kMaskLo64);
-        std::uint64_t mixed1 = ((either ^ kMaskHi64) & (shared | ~kMaskHi64)) ^ diff;
-
-        std::uint64_t res = mixed0 ^ mixed1;
-        std::memcpy(&result[i], &res, 8);
+        const std::uint64_t either = ua | ub;
+        const std::uint64_t out =
+            (~either & kNotMaskLo) | (either & kNotMaskHi);
+        std::memcpy(dst + i, &out, sizeof(out));
     }
 
-    // Handle remaining elements
     for (; i < n; ++i) {
-        const auto ua = static_cast<std::uint8_t>(a[i]);
-        const auto ub = static_cast<std::uint8_t>(b[i]);
-
-        const auto shared = static_cast<std::uint8_t>(ua & ub);
-        const auto either = static_cast<std::uint8_t>(ua | ub);
-        const auto diff = static_cast<std::uint8_t>(ua ^ ub);
-        const auto mixed0 =
-            static_cast<std::uint8_t>((diff & kMaskLo) | (~shared & ~kMaskLo));
-        const auto mixed1 = static_cast<std::uint8_t>(
-            ((either ^ kMaskHi) & (shared | ~kMaskHi)) ^ diff);
-
-        result[i] = static_cast<std::int8_t>(mixed0 ^ mixed1);
+        const auto either = static_cast<std::uint8_t>(pa[i] | pb[i]);
+        dst[i] = static_cast<std::uint8_t>((~either & 0xA5u) |
+                                           (either & 0x3Cu));
     }
 }
 

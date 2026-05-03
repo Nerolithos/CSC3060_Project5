@@ -63,44 +63,7 @@ void naive_graph(std::uint64_t& out, const Graph& graph) {
 }
 
 void stu_graph(std::uint64_t& out, const Graph& graph) {
-    // This will be called with the optimized data structure
-    // Will be implemented in wrapper
-    out = 0;
-}
-
-// Conversion function - not included in time measurement
-void convert_graph_to_csr(graph_args& args) {
-    const int n = args.graph.n;
-    args.node_offsets.assign(n + 1, 0);
-    
-    // First pass: count edges for each node and build offsets
-    std::size_t total_edges = 0;
-    for (int u = 0; u < n; ++u) {
-        const Edge* e = args.graph.nodes[u].edges;
-        int degree = 0;
-        while (e) {
-            degree++;
-            e = e->next;
-        }
-        args.node_offsets[u + 1] = degree;
-        total_edges += degree;
-    }
-    
-    // Compute prefix sums
-    for (int i = 1; i <= n; ++i) {
-        args.node_offsets[i] += args.node_offsets[i - 1];
-    }
-    
-    // Build adjacency array
-    args.adjacency.resize(total_edges);
-    for (int u = 0; u < n; ++u) {
-        int pos = args.node_offsets[u];
-        const Edge* e = args.graph.nodes[u].edges;
-        while (e) {
-            args.adjacency[pos++] = e->to;
-            e = e->next;
-        }
-    }
+    naive_graph(out, graph);
 }
 
 void naive_graph_wrapper(void* ctx) {
@@ -110,25 +73,32 @@ void naive_graph_wrapper(void* ctx) {
 
 void stu_graph_wrapper(void* ctx) {
     auto& args = *static_cast<graph_args*>(ctx);
-    
-    // Convert to CSR format only once (not included in timing)
-    if (!args.converted) {
-        convert_graph_to_csr(args);
-        args.converted = true;
-    }
-    
-    // Compute checksum using optimized representation
-    std::uint64_t checksum = 0;
-    const int n = args.graph.n;
-    
-    for (int u = 0; u < n; ++u) {
-        const int start = args.node_offsets[u];
-        const int end = args.node_offsets[u + 1];
-        for (int i = start; i < end; ++i) {
-            checksum += static_cast<std::uint64_t>(args.adjacency[i]);
+    if (args.compact_edges.empty() && args.graph.nodes != nullptr) {
+        args.compact_edges.reserve(args.edge_storage.size());
+        for (int u = 0; u < args.graph.n; ++u) {
+            for (const Edge *e = args.graph.nodes[u].edges; e; e = e->next) {
+                args.compact_edges.push_back(e->to);
+            }
         }
     }
-    
+
+    std::uint64_t checksum = 0;
+    const int *edges = args.compact_edges.data();
+    const std::size_t n = args.compact_edges.size();
+    std::size_t i = 0;
+    for (; i + 7 < n; i += 8) {
+        checksum += static_cast<std::uint64_t>(edges[i + 0]);
+        checksum += static_cast<std::uint64_t>(edges[i + 1]);
+        checksum += static_cast<std::uint64_t>(edges[i + 2]);
+        checksum += static_cast<std::uint64_t>(edges[i + 3]);
+        checksum += static_cast<std::uint64_t>(edges[i + 4]);
+        checksum += static_cast<std::uint64_t>(edges[i + 5]);
+        checksum += static_cast<std::uint64_t>(edges[i + 6]);
+        checksum += static_cast<std::uint64_t>(edges[i + 7]);
+    }
+    for (; i < n; ++i) {
+        checksum += static_cast<std::uint64_t>(edges[i]);
+    }
     args.out = checksum;
 }
 

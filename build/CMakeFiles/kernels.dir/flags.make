@@ -6,7 +6,5 @@ CXX_DEFINES =
 
 CXX_INCLUDES = -I/Users/bob/Documents/GitHub/CSC3060_Project5/include
 
-CXX_FLAGSarm64 = -std=c++2b -arch arm64 -ffast-math -O2 -Wall -g -fno-omit-frame-pointer
-
-CXX_FLAGS = -std=c++2b -arch arm64 -ffast-math -O2 -Wall -g -fno-omit-frame-pointer
+CXX_FLAGS = -std=c++2b -ffast-math -O2 -Wall -g -fno-omit-frame-pointer
 
