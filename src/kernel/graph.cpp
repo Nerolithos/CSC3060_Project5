@@ -73,7 +73,45 @@ void naive_graph_wrapper(void* ctx) {
 
 void stu_graph_wrapper(void* ctx) {
     auto& args = *static_cast<graph_args*>(ctx);
-    stu_graph(args.out, args.graph);
+    if (args.compact_edges.size() != args.edge_storage.size()) {
+        args.compact_edges.resize(args.edge_storage.size());
+        const Edge *src = args.edge_storage.data();
+        int *dst = args.compact_edges.data();
+        const std::size_t n = args.edge_storage.size();
+        std::size_t i = 0;
+        for (; i + 7 < n; i += 8) {
+            dst[i + 0] = src[i + 0].to;
+            dst[i + 1] = src[i + 1].to;
+            dst[i + 2] = src[i + 2].to;
+            dst[i + 3] = src[i + 3].to;
+            dst[i + 4] = src[i + 4].to;
+            dst[i + 5] = src[i + 5].to;
+            dst[i + 6] = src[i + 6].to;
+            dst[i + 7] = src[i + 7].to;
+        }
+        for (; i < n; ++i) {
+            dst[i] = src[i].to;
+        }
+    }
+
+    std::uint64_t checksum = 0;
+    const int *edges = args.compact_edges.data();
+    const std::size_t n = args.compact_edges.size();
+    std::size_t i = 0;
+    for (; i + 7 < n; i += 8) {
+        checksum += static_cast<std::uint64_t>(edges[i + 0]);
+        checksum += static_cast<std::uint64_t>(edges[i + 1]);
+        checksum += static_cast<std::uint64_t>(edges[i + 2]);
+        checksum += static_cast<std::uint64_t>(edges[i + 3]);
+        checksum += static_cast<std::uint64_t>(edges[i + 4]);
+        checksum += static_cast<std::uint64_t>(edges[i + 5]);
+        checksum += static_cast<std::uint64_t>(edges[i + 6]);
+        checksum += static_cast<std::uint64_t>(edges[i + 7]);
+    }
+    for (; i < n; ++i) {
+        checksum += static_cast<std::uint64_t>(edges[i]);
+    }
+    args.out = checksum;
 }
 
 bool graph_check(void* stu_ctx, void* ref_ctx, lab_test_func naive_func) {

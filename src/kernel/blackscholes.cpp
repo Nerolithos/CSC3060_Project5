@@ -16,7 +16,7 @@
 
 namespace {
 
-static inline float fast_exp(float x) {
+[[gnu::always_inline]] static inline float fast_exp(float x) {
     constexpr float inv_ln2 = 1.4426950408889634f;
     constexpr float ln2 = 0.6931471805599453f;
 
@@ -41,7 +41,7 @@ static inline float fast_exp(float x) {
     return poly * std::bit_cast<float>(bits);
 }
 
-static inline float fast_log(float x) {
+[[gnu::always_inline]] static inline float fast_log(float x) {
     const std::uint32_t bits = std::bit_cast<std::uint32_t>(x);
     const int exp = static_cast<int>((bits >> 23) & 0xffu) - 127;
     const std::uint32_t mant_bits = (bits & 0x007fffffu) | 0x3f800000u;
@@ -57,7 +57,7 @@ static inline float fast_log(float x) {
     return log_m + static_cast<float>(exp) * 0.6931471805599453f;
 }
 
-static inline float cndf_approx(float in) {
+[[gnu::always_inline]] static inline float cndf_approx(float in) {
     const float ax = std::abs(in);
     const float nprime =
         fast_exp(-0.5f * ax * ax) * static_cast<float>(inv_sqrt_2xPI);

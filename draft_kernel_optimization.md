@@ -381,3 +381,39 @@ Filter Gradient 判断：
 | Filter Gradient | PASS | 3,780,189 | 6.613x |
 
 说明：Graph 本地会比 compact 版本慢，但服务器上 compact conversion 已经表现出明显退化，因此本轮优先选择服务器更可能稳定 pass 的实现。
+
+## 2026-05-03 Server Feedback Round 5
+
+第五次服务器截图结果：
+
+| Kernel | Server time ns | Baseline ns | Speedup |
+|---|---:|---:|---:|
+| Black-Scholes | 5,162,498 | 4,800,000 | 0.930x |
+| Graph | 12,494,293 | 5,000,000 | 0.400x |
+| Filter Gradient | 40,650,724 | 25,000,000 | 0.615x |
+
+修正判断：
+
+- Round 4 将 Graph 回退为直接链表扫描后，服务器 Graph 更慢，说明这个回退方向不对。Graph 应恢复之前更好的 compact 基线，不再继续动。
+- 当前总版本应以之前服务器表现更好的 Graph 版本作为基线，然后只继续尝试 Black-Scholes 和 Filter Gradient。
+
+本轮最终保留：
+
+- `graph.cpp`: 回退 Round 4 的直接扫描改动，恢复 timed wrapper 内使用 `compact_edges` 的版本。
+- `blackscholes.cpp`: 保留 2-way unroll，并给 `fast_exp/fast_log/cndf_approx` 也加 `always_inline`，避免服务器编译器在热数学 helper 上留下调用边界。
+- `filter_gradient.cpp`: 保留 `float inv9`、`row_total` 和 `__restrict__` pointer 信息。尝试过 Sobel 递增指针窗口，但本地变慢，已撤回。
+
+本地验证：
+
+- `cmake --build build -j`: passed
+- `./build/run_stu`: all passed
+
+本地 `run_stu` 观测值：
+
+| Kernel | Status | Avg time ns | Speedup vs baseline |
+|---|---:|---:|---:|
+| Black-Scholes | PASS | 241,120 | 19.907x |
+| Graph | PASS | 901,191 | 5.548x |
+| Filter Gradient | PASS | 4,713,258 | 5.304x |
+
+说明：本地数据波动较大，Graph/Filter 的方向判断主要以课程服务器截图为准。
