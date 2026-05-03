@@ -125,10 +125,11 @@ void stu_filter_gradient(float& out, const data_struct& data,
                    std::size_t width, std::size_t height) {
     const std::size_t W = width;
     const std::size_t H = height;
-    constexpr double inv9 = 1.0 / 9.0;
+    constexpr float inv9 = 1.0f / 9.0f;
 
     double total = 0.0;
     for (std::size_t y = 1; y + 1 < H; ++y) {
+        double row_total = 0.0;
         const std::size_t ym1 = (y - 1) * W;
         const std::size_t y0 = y * W;
         const std::size_t yp1 = (y + 1) * W;
@@ -202,7 +203,7 @@ void stu_filter_gradient(float& out, const data_struct& data,
                 + i2[xm1] + 2.0f * i2[x] + i2[xp1];
             const float p3 = sobel_gy * sobel_hy + sobel_iy;
 
-            total += p1 + p2 + p3;
+            row_total += p1 + p2 + p3;
 
             a_col0 = a_col1;
             a_col1 = a_col2;
@@ -249,7 +250,8 @@ void stu_filter_gradient(float& out, const data_struct& data,
             + i2[xm1] + 2.0f * i2[x] + i2[xp1];
         const float p3 = sobel_gy * sobel_hy + sobel_iy;
 
-        total += p1 + p2 + p3;
+        row_total += p1 + p2 + p3;
+        total += row_total;
     }
 
     out = static_cast<float>(total);
