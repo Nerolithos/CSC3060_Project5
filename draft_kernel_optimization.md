@@ -344,3 +344,40 @@ Filter Gradient 判断：
 | Filter Gradient | PASS | 3,528,906 | 7.084x |
 
 说明：本地机器和课程服务器差异很大，正式判断仍以服务器 `run_stu` 为准。
+
+## 2026-05-03 Server Feedback Round 4
+
+第四次服务器截图结果：
+
+| Kernel | Server time ns | Baseline ns | Speedup |
+|---|---:|---:|---:|
+| Black-Scholes | 5,028,161 | 4,800,000 | 0.955x |
+| Graph | 9,837,790 | 5,000,000 | 0.508x |
+| Filter Gradient | 41,448,806 | 25,000,000 | 0.603x |
+
+本轮决策：
+
+- Black-Scholes 明显比上一轮改善，保留 `blackscholes_fast_one` 强内联 + 2-way unroll 的思路，不继续冒险动数学近似。
+- Graph 从上一轮 pass 退化到 9.8ms。判断原因是 `stu_graph_wrapper` 第一次 timed call 内构造 `compact_edges`，服务器计时会把这次大规模转换计入 20 次平均。为避免初始化式工作污染 timed kernel，本轮将 wrapper 回退为直接调用 `stu_graph(args.out, args.graph)`，也就是稳定的链表扫描路径。
+- Filter Gradient 继续单独优化。曾尝试双像素展开 + 双累加链，但本地变慢，原因大概率是 helper 参数过多导致寄存器压力升高，因此撤回。本轮保留上一版滑动列和结构，并为 9 个通道的 base pointer/row pointer 加 `__restrict__`，帮助编译器减少别名保守性。
+
+本轮最终保留改动：
+
+- `graph.cpp`: 回退 timed wrapper 内的 compact conversion，避免服务器平均时间被第一次转换拖慢。
+- `filter_gradient.cpp`: 保留 `float inv9` 和 `row_total`，新增 `__restrict__` base/row pointers；撤回双像素展开。
+- `blackscholes.cpp`: 不改，保留服务器表现更好的强内联 + 2-way unroll 版本。
+
+本地验证：
+
+- `cmake --build build -j`: passed
+- `./build/run_stu`: all passed
+
+本地 `run_stu` 观测值：
+
+| Kernel | Status | Avg time ns | Speedup vs baseline |
+|---|---:|---:|---:|
+| Black-Scholes | PASS | 203,679 | 23.566x |
+| Graph | PASS | 2,405,014 | 2.079x |
+| Filter Gradient | PASS | 3,780,189 | 6.613x |
+
+说明：Graph 本地会比 compact 版本慢，但服务器上 compact conversion 已经表现出明显退化，因此本轮优先选择服务器更可能稳定 pass 的实现。
