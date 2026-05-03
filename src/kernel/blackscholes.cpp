@@ -215,7 +215,7 @@ void stu_BlkSchls(std::vector<float> &CallOptionPrice,
     float *__restrict__ put = PutOptionPrice.data();
 
     size_t i = 0;
-    for (; i + 3 < n; i += 4) {
+    for (; i + 1 < n; i += 2) {
         blackscholes_fast_one(call[i],
                               put[i],
                               s_ptr[i],
@@ -230,20 +230,6 @@ void stu_BlkSchls(std::vector<float> &CallOptionPrice,
                               r_ptr[i + 1],
                               v_ptr[i + 1],
                               t_ptr[i + 1]);
-        blackscholes_fast_one(call[i + 2],
-                              put[i + 2],
-                              s_ptr[i + 2],
-                              x_ptr[i + 2],
-                              r_ptr[i + 2],
-                              v_ptr[i + 2],
-                              t_ptr[i + 2]);
-        blackscholes_fast_one(call[i + 3],
-                              put[i + 3],
-                              s_ptr[i + 3],
-                              x_ptr[i + 3],
-                              r_ptr[i + 3],
-                              v_ptr[i + 3],
-                              t_ptr[i + 3]);
     }
     for (; i < n; ++i) {
         blackscholes_fast_one(call[i],
