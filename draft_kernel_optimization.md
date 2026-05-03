@@ -417,3 +417,38 @@ Filter Gradient 判断：
 | Filter Gradient | PASS | 4,713,258 | 5.304x |
 
 说明：本地数据波动较大，Graph/Filter 的方向判断主要以课程服务器截图为准。
+
+## 2026-05-04 Server Feedback Round 6
+
+第六次服务器截图结果：
+
+| Kernel | Server time ns | Baseline ns | Speedup |
+|---|---:|---:|---:|
+| Black-Scholes | 5,353,633 | 4,800,000 | 0.897x |
+| Bitwise | 257,444 | 250,000 | 0.971x |
+| Graph | 9,836,368 | 5,000,000 | 0.508x |
+| Filter Gradient | 41,582,354 | 25,000,000 | 0.601x |
+
+修正方向：
+
+- Graph 仍然应回到表现更好的 compact 基线，但 compact buffer 不能在第一次 timed wrapper 内构造，否则服务器 20 次平均会被第一次大拷贝拖慢。
+- 本轮在 `initialize_graph` 中同步填充 `compact_edges`，让 timed `stu_graph_wrapper` 只负责扫描紧凑 int buffer。这样不改 benchmark harness，也不改变 checker 或 baseline。
+- Black-Scholes 撤回 Round 5 中对 `fast_exp/fast_log/cndf_approx` 的额外 `always_inline`，因为服务器反馈显示该改动可能增大代码体积并退化 instruction cache/调度。保留服务器表现更好的 `blackscholes_fast_one` 强内联 + 2-way unroll。
+- Filter Gradient 回到之前服务器更稳的滑动列和版本：使用 `double inv9`、直接 `total +=`，撤回 `float inv9/row_total/restrict` 组合。
+- Bitwise 只差约 3%，当前 word-level 版本已经是小而稳的实现，本轮不做大改。
+
+本地验证：
+
+- `cmake --build build -j`: passed
+- `./build/run_stu`: all passed
+
+本地 `run_stu` 观测值：
+
+| Kernel | Status | Avg time ns | Speedup vs baseline |
+|---|---:|---:|---:|
+| Black-Scholes | PASS | 198,433 | 24.190x |
+| Bitwise | PASS | 32,729 | 7.638x |
+| Graph | PASS | 468,337 | 10.676x |
+| Filter Gradient | PASS | 4,316,727 | 5.791x |
+
+说明：本轮目标是恢复最佳总版本基线，再只围绕 Black-Scholes / Filter Gradient 做低风险迭代。

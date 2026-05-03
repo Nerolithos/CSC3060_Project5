@@ -125,48 +125,38 @@ void stu_filter_gradient(float& out, const data_struct& data,
                    std::size_t width, std::size_t height) {
     const std::size_t W = width;
     const std::size_t H = height;
-    constexpr float inv9 = 1.0f / 9.0f;
-    const float *__restrict__ a_data = data.a.data();
-    const float *__restrict__ b_data = data.b.data();
-    const float *__restrict__ c_data = data.c.data();
-    const float *__restrict__ d_data = data.d.data();
-    const float *__restrict__ e_data = data.e.data();
-    const float *__restrict__ f_data = data.f.data();
-    const float *__restrict__ g_data = data.g.data();
-    const float *__restrict__ h_data = data.h.data();
-    const float *__restrict__ i_data = data.i.data();
+    constexpr double inv9 = 1.0 / 9.0;
 
     double total = 0.0;
     for (std::size_t y = 1; y + 1 < H; ++y) {
-        double row_total = 0.0;
         const std::size_t ym1 = (y - 1) * W;
         const std::size_t y0 = y * W;
         const std::size_t yp1 = (y + 1) * W;
 
-        const float *__restrict__ a0 = a_data + ym1;
-        const float *__restrict__ a1 = a_data + y0;
-        const float *__restrict__ a2 = a_data + yp1;
-        const float *__restrict__ b0 = b_data + ym1;
-        const float *__restrict__ b1 = b_data + y0;
-        const float *__restrict__ b2 = b_data + yp1;
-        const float *__restrict__ c0 = c_data + ym1;
-        const float *__restrict__ c1 = c_data + y0;
-        const float *__restrict__ c2 = c_data + yp1;
-        const float *__restrict__ d0 = d_data + ym1;
-        const float *__restrict__ d1 = d_data + y0;
-        const float *__restrict__ d2 = d_data + yp1;
-        const float *__restrict__ e0 = e_data + ym1;
-        const float *__restrict__ e1 = e_data + y0;
-        const float *__restrict__ e2 = e_data + yp1;
-        const float *__restrict__ f0 = f_data + ym1;
-        const float *__restrict__ f1 = f_data + y0;
-        const float *__restrict__ f2 = f_data + yp1;
-        const float *__restrict__ g0 = g_data + ym1;
-        const float *__restrict__ g2 = g_data + yp1;
-        const float *__restrict__ h0 = h_data + ym1;
-        const float *__restrict__ h2 = h_data + yp1;
-        const float *__restrict__ i0 = i_data + ym1;
-        const float *__restrict__ i2 = i_data + yp1;
+        const float *a0 = data.a.data() + ym1;
+        const float *a1 = data.a.data() + y0;
+        const float *a2 = data.a.data() + yp1;
+        const float *b0 = data.b.data() + ym1;
+        const float *b1 = data.b.data() + y0;
+        const float *b2 = data.b.data() + yp1;
+        const float *c0 = data.c.data() + ym1;
+        const float *c1 = data.c.data() + y0;
+        const float *c2 = data.c.data() + yp1;
+        const float *d0 = data.d.data() + ym1;
+        const float *d1 = data.d.data() + y0;
+        const float *d2 = data.d.data() + yp1;
+        const float *e0 = data.e.data() + ym1;
+        const float *e1 = data.e.data() + y0;
+        const float *e2 = data.e.data() + yp1;
+        const float *f0 = data.f.data() + ym1;
+        const float *f1 = data.f.data() + y0;
+        const float *f2 = data.f.data() + yp1;
+        const float *g0 = data.g.data() + ym1;
+        const float *g2 = data.g.data() + yp1;
+        const float *h0 = data.h.data() + ym1;
+        const float *h2 = data.h.data() + yp1;
+        const float *i0 = data.i.data() + ym1;
+        const float *i2 = data.i.data() + yp1;
 
         float a_col0 = a0[0] + a1[0] + a2[0];
         float a_col1 = a0[1] + a1[1] + a2[1];
@@ -212,7 +202,7 @@ void stu_filter_gradient(float& out, const data_struct& data,
                 + i2[xm1] + 2.0f * i2[x] + i2[xp1];
             const float p3 = sobel_gy * sobel_hy + sobel_iy;
 
-            row_total += p1 + p2 + p3;
+            total += p1 + p2 + p3;
 
             a_col0 = a_col1;
             a_col1 = a_col2;
@@ -259,8 +249,7 @@ void stu_filter_gradient(float& out, const data_struct& data,
             + i2[xm1] + 2.0f * i2[x] + i2[xp1];
         const float p3 = sobel_gy * sobel_hy + sobel_iy;
 
-        row_total += p1 + p2 + p3;
-        total += row_total;
+        total += p1 + p2 + p3;
     }
 
     out = static_cast<float>(total);

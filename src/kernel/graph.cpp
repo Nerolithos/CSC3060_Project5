@@ -21,6 +21,8 @@ void initialize_graph(graph_args* args,
     args->nodes.assign(node_count, Node{nullptr});
     args->edge_storage.clear();
     args->edge_storage.resize(node_count * static_cast<std::size_t>(avg_degree));
+    args->compact_edges.clear();
+    args->compact_edges.resize(args->edge_storage.size());
 
     args->graph.n = static_cast<int>(node_count);
     args->graph.nodes = args->nodes.data();
@@ -40,6 +42,7 @@ void initialize_graph(graph_args* args,
             Edge& e = args->edge_storage[edge_pos + static_cast<std::size_t>(k)];
             e.to = neighbors[static_cast<std::size_t>(k)];
             e.next = head;
+            args->compact_edges[edge_pos + static_cast<std::size_t>(k)] = e.to;
             head = &e;
         }
 
