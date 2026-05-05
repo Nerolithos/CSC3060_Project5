@@ -69,43 +69,67 @@ void stu_bitwise(std::span<std::int8_t> result, std::span<const std::int8_t> a,
     const auto *__restrict__ pb = reinterpret_cast<const std::uint8_t *>(b.data());
 
     std::size_t i = 0;
-    for (; i + 32 <= n; i += 32) {
-        std::uint64_t ua0;
-        std::uint64_t ub0;
-        std::uint64_t ua1;
-        std::uint64_t ub1;
-        std::uint64_t ua2;
-        std::uint64_t ub2;
-        std::uint64_t ua3;
-        std::uint64_t ub3;
+    const bool aligned64 =
+        ((reinterpret_cast<std::uintptr_t>(dst) |
+          reinterpret_cast<std::uintptr_t>(pa) |
+          reinterpret_cast<std::uintptr_t>(pb)) &
+         0x7u) == 0u;
 
-        std::memcpy(&ua0, pa + i, 8);
-        std::memcpy(&ub0, pb + i, 8);
-        std::memcpy(&ua1, pa + i + 8, 8);
-        std::memcpy(&ub1, pb + i + 8, 8);
-        std::memcpy(&ua2, pa + i + 16, 8);
-        std::memcpy(&ub2, pb + i + 16, 8);
-        std::memcpy(&ua3, pa + i + 24, 8);
-        std::memcpy(&ub3, pb + i + 24, 8);
+    if (aligned64) {
+        auto *__restrict__ dst64 = reinterpret_cast<std::uint64_t *>(dst);
+        const auto *__restrict__ pa64 = reinterpret_cast<const std::uint64_t *>(pa);
+        const auto *__restrict__ pb64 = reinterpret_cast<const std::uint64_t *>(pb);
+        const std::size_t words = n >> 3;
+        std::size_t w = 0;
+        for (; w + 3 < words; w += 4) {
+            dst64[w + 0] = kBase64 ^ ((pa64[w + 0] | pb64[w + 0]) & kDelta64);
+            dst64[w + 1] = kBase64 ^ ((pa64[w + 1] | pb64[w + 1]) & kDelta64);
+            dst64[w + 2] = kBase64 ^ ((pa64[w + 2] | pb64[w + 2]) & kDelta64);
+            dst64[w + 3] = kBase64 ^ ((pa64[w + 3] | pb64[w + 3]) & kDelta64);
+        }
+        for (; w < words; ++w) {
+            dst64[w] = kBase64 ^ ((pa64[w] | pb64[w]) & kDelta64);
+        }
+        i = words << 3;
+    } else {
+        for (; i + 32 <= n; i += 32) {
+            std::uint64_t ua0;
+            std::uint64_t ub0;
+            std::uint64_t ua1;
+            std::uint64_t ub1;
+            std::uint64_t ua2;
+            std::uint64_t ub2;
+            std::uint64_t ua3;
+            std::uint64_t ub3;
 
-        const std::uint64_t out0 = kBase64 ^ ((ua0 | ub0) & kDelta64);
-        const std::uint64_t out1 = kBase64 ^ ((ua1 | ub1) & kDelta64);
-        const std::uint64_t out2 = kBase64 ^ ((ua2 | ub2) & kDelta64);
-        const std::uint64_t out3 = kBase64 ^ ((ua3 | ub3) & kDelta64);
+            std::memcpy(&ua0, pa + i, 8);
+            std::memcpy(&ub0, pb + i, 8);
+            std::memcpy(&ua1, pa + i + 8, 8);
+            std::memcpy(&ub1, pb + i + 8, 8);
+            std::memcpy(&ua2, pa + i + 16, 8);
+            std::memcpy(&ub2, pb + i + 16, 8);
+            std::memcpy(&ua3, pa + i + 24, 8);
+            std::memcpy(&ub3, pb + i + 24, 8);
 
-        std::memcpy(dst + i, &out0, 8);
-        std::memcpy(dst + i + 8, &out1, 8);
-        std::memcpy(dst + i + 16, &out2, 8);
-        std::memcpy(dst + i + 24, &out3, 8);
-    }
+            const std::uint64_t out0 = kBase64 ^ ((ua0 | ub0) & kDelta64);
+            const std::uint64_t out1 = kBase64 ^ ((ua1 | ub1) & kDelta64);
+            const std::uint64_t out2 = kBase64 ^ ((ua2 | ub2) & kDelta64);
+            const std::uint64_t out3 = kBase64 ^ ((ua3 | ub3) & kDelta64);
 
-    for (; i + 8 <= n; i += 8) {
-        std::uint64_t ua;
-        std::uint64_t ub;
-        std::memcpy(&ua, pa + i, 8);
-        std::memcpy(&ub, pb + i, 8);
-        const std::uint64_t out = kBase64 ^ ((ua | ub) & kDelta64);
-        std::memcpy(dst + i, &out, 8);
+            std::memcpy(dst + i, &out0, 8);
+            std::memcpy(dst + i + 8, &out1, 8);
+            std::memcpy(dst + i + 16, &out2, 8);
+            std::memcpy(dst + i + 24, &out3, 8);
+        }
+
+        for (; i + 8 <= n; i += 8) {
+            std::uint64_t ua;
+            std::uint64_t ub;
+            std::memcpy(&ua, pa + i, 8);
+            std::memcpy(&ub, pb + i, 8);
+            const std::uint64_t out = kBase64 ^ ((ua | ub) & kDelta64);
+            std::memcpy(dst + i, &out, 8);
+        }
     }
 
     for (; i < n; ++i) {
