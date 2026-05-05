@@ -1,6 +1,9 @@
 #ifndef BONUS_BITWISE_BONUS_SIMD_H
 #define BONUS_BITWISE_BONUS_SIMD_H
 
+#include <cstdint>
+#include <span>
+
 #include "../include/bitwise.h"
 
 // Bonus-only SIMD implementation idea using AVX2 intrinsics.

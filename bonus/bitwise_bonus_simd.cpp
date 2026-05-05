@@ -7,7 +7,8 @@
 void bonus_bitwise_avx2(std::span<std::int8_t> result,
                         std::span<const std::int8_t> a,
                         std::span<const std::int8_t> b) {
-    const std::size_t n = std::min({result.size(), a.size(), b.size()});
+    std::size_t n = std::min(result.size(), a.size());
+    n = std::min(n, b.size());
 
     const __m256i kBase = _mm256_set1_epi8(static_cast<char>(0xA5));
     const __m256i kDelta = _mm256_set1_epi8(static_cast<char>(0x99));
@@ -29,7 +30,8 @@ void bonus_bitwise_avx2(std::span<std::int8_t> result,
     constexpr std::uint8_t kDeltaScalar = 0x99u;
     for (; i < n; ++i) {
         const auto either = static_cast<std::uint8_t>(a[i] | b[i]);
-        result[i] = static_cast<std::int8_t>(kBaseScalar ^ (either & kDeltaScalar));
+        result[i] =
+            static_cast<std::int8_t>(kBaseScalar ^ (either & kDeltaScalar));
     }
 }
 

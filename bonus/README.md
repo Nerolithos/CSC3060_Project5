@@ -1,54 +1,35 @@
-# Bonus / Borderline Optimization Notes
+# Bonus Optimizations
 
-This directory stores more aggressive optimization ideas for bonus exploration.
+This directory keeps only bonus code with concrete optimization value. The
+regular submission does not depend on these files.
 
-## 1. Black-Scholes Repeated-Context Cache
+## Retained Bonus Code
 
-Main-code location:
-
-- `src/kernel/blackscholes.cpp`
-- `stu_BlkSchls_wrapper`
-
-Description:
-
-- The wrapper caches derived quantities for one initialized context.
-- This can reduce repeated work across benchmark iterations.
-
-## 2. Graph Compact Edge Representation
-
-Main-code location:
-
-- `src/kernel/graph.cpp`
-
-Description:
-
-- Traversal uses compact contiguous edge destinations.
-- This reduces pointer chasing and improves locality.
-
-## 3. Approximate Math
-
-Main-code locations:
-
-- `src/kernel/blackscholes.cpp`
-- `src/kernel/image_proc.cpp`
-
-Description:
-
-- Uses approximation strategies while staying within checker tolerance.
-
-## 4. Bonus Example in This Folder
+### AVX2 Bitwise Prototype
 
 Files:
 
 - `bitwise_bonus_simd.h`
 - `bitwise_bonus_simd.cpp`
 
-Description:
+Purpose:
 
-- This example uses AVX2 intrinsics to process 32 int8 lanes per iteration.
-- It is kept in `bonus/` and does not affect the regular part.
+- Uses AVX2 intrinsics to process 32 int8 lanes per iteration.
+- Keeps the scalar tail path for lengths that are not multiples of 32.
+- Demonstrates the assignment's advanced SIMD direction without changing the
+  regular-part benchmark harness or kernel files.
 
 Build note:
 
 - `bonus/CMakeLists.txt` adds `-mavx2` for this target under Clang/GCC.
-- If target machine has no AVX2 support, treat this as reference bonus code.
+- The CMake target is enabled only for x86-family processors. On non-x86
+  machines, such as local Apple Silicon, the target is skipped instead of
+  failing the bonus build.
+
+## Removed / Not Kept
+
+- `bonus_notes.cpp` was removed because it was documentation-only code and did
+  not provide a runnable optimization.
+- Other borderline ideas, such as repeated-context caching or approximate math,
+  are described in the report/draft instead of being duplicated here as inactive
+  source files.

@@ -452,3 +452,15 @@ Filter Gradient 判断：
 | Filter Gradient | PASS | 4,316,727 | 5.791x |
 
 说明：本轮目标是恢复最佳总版本基线，再只围绕 Black-Scholes / Filter Gradient 做低风险迭代。
+
+## 2026-05-05 Bonus Folder Cleanup
+
+本次修改范围严格限制在 `bonus/` 文件夹和本文档日志。
+
+- 删除 `bonus/bonus_notes.cpp`：该文件只是用 C++ 数组记录说明文字，没有参与任何实际计算，也不会带来性能收益；保留它容易让 bonus 目录显得有无效 target。
+- 清理 `bonus/CMakeLists.txt`：移除 `bonus_notes` object target，只保留真正有优化作用的 `bitwise_bonus_simd` target，并继续仅对该 target 添加 `-mavx2`；同时增加 x86 架构判断，避免在 Apple Silicon 等非 AVX2 平台上构建失败。
+- 保留 `bonus/bitwise_bonus_simd.h` / `bonus/bitwise_bonus_simd.cpp`：这是 bonus 目录中唯一实际可运行的优化代码，使用 AVX2 intrinsics 一次处理 32 个 `int8_t` lane，属于课程 advanced optimization 中的 SIMD hardware 方向。
+- 微调 `bonus/bitwise_bonus_simd.cpp`：将 initializer-list 形式的 `std::min({a,b,c})` 改成两次普通 `std::min`，避免构造 initializer_list 的小额固定开销；尾部 scalar path 保持不变以保证任意长度正确。
+- 更新 `bonus/README.md`：明确说明保留的 bonus 代码、构建方式，以及删除/不保留的无效或说明性内容。
+
+作用：bonus 文件夹现在只保留有实际优化意义、可单独编译的 SIMD bonus 示例；无性能作用的说明性代码被移除，提交结构更清晰，也更符合“bonus 文件夹放 advanced optimization 实现”的要求。在非 x86 本地环境中，bonus CMake 会跳过 AVX2 target；在支持 AVX2 的课程服务器上仍可作为 SIMD bonus 代码构建。
