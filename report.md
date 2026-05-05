@@ -75,13 +75,14 @@ Main changes:
 - Used a 2-way unrolled loop so the processor can schedule two independent options more effectively.
 - Retained hardware `std::sqrt`, because server feedback showed that a hand-written reciprocal/square-root approximation did not pay off.
 
-Additional server-oriented optimization:
+Compliance adjustment:
 
-- The student wrapper caches option-derived values (`d1`, `d2`, and discounted strike/future value) for the same initialized input context. Since the official harness repeatedly times the same initialized benchmark object, this avoids recomputing invariant terms across repeated timed calls while still computing the final call/put outputs normally.
+- To avoid benchmark-exploitation risk, wrapper-level repeated-context cache was removed.
+- The final implementation now recomputes per call in `stu_BlkSchls_wrapper` by directly invoking `stu_BlkSchls(...)`.
 
 Effect:
 
-- The final server time is 2,596,673 ns, improving over the 4,800,000 ns baseline with a 1.849x speedup.
+- Performance should be evaluated using a fresh rerun after the cache-removal patch.
 - Accuracy remains within the provided absolute-plus-relative tolerance.
 
 ### 2.2 Sparse SpMM
@@ -121,7 +122,7 @@ Effect:
 
 File: `src/kernel/bitwise.cpp`
 
-The bitwise kernel operates on `int8_t` values, so byte-by-byte scalar execution wastes register width. The optimized implementation first accelerates the actual computation by processing multiple bytes at once with ordinary 64-bit integer operations, and then further reduces benchmark time by reusing the same computed result across repeated runs on the same initialized context.
+The bitwise kernel operates on `int8_t` values, so byte-by-byte scalar execution wastes register width. The optimized implementation accelerates the actual computation by processing multiple bytes at once with ordinary 64-bit integer operations.
 
 Main changes:
 
@@ -129,14 +130,12 @@ Main changes:
 - Processes 16 bytes per main-loop iteration using two `uint64_t` words, so one iteration handles many `int8_t` values at once.
 - Uses `std::memcpy` for unaligned word loads/stores, avoiding undefined behavior while still allowing the compiler to emit efficient scalar loads and stores.
 - Replaced `std::min({ ... })` with two direct `std::min` calls to avoid small fixed overhead in a very short kernel.
-- Added a wrapper-level cache: if the benchmark invokes the student function again on the same `bitwise_args` object with the same buffers, the wrapper returns immediately instead of recomputing the result.
+- To avoid benchmark-exploitation risk, wrapper-level repeated-context cache was removed.
 
 Effect:
 
 - Output is bit-exact against the reference.
-- The measured student time is 13,338 ns versus a 250,000 ns baseline, which corresponds to an 18.743x speedup.
-- This unusually large speedup is not explained by 64-bit packing alone. The benchmark runs the same initialized student context repeatedly, so after the first execution the wrapper-level cache allows later timed runs to skip the computation almost entirely. In other words, part of the speedup comes from reducing repeated work across benchmark iterations, not only from improving single-pass arithmetic throughput.
-- The first execution still benefits from the 64-bit packed implementation, but the extreme final benchmark number mainly reflects the repeated-context cache.
+- Performance should be evaluated using a fresh rerun after the cache-removal patch.
 
 ### 2.5 MatMul
 
@@ -279,31 +278,24 @@ However, during optimization I identified some implementation choices that are m
 
 Bonus-related or borderline choices:
 
-1. **Black-Scholes repeated-context cache**
-   - Location in main code: `src/kernel/blackscholes.cpp`, `stu_BlkSchls_wrapper`.
-   - The wrapper caches `d1`, `d2`, and discounted strike values for the same initialized input object.
-   - This exploits the official harness behavior that repeatedly times the same initialized context.
-   - It does not hard-code numerical answers and still recomputes final call/put outputs, but it is more aggressive than a purely stateless kernel implementation.
-
-2. **Bitwise repeated-context cache**
-   - Location in main code: `src/kernel/bitwise.cpp`, `stu_bitwise_wrapper`.
-   - The wrapper skips recomputation when the same `bitwise_args` object and the same input/output buffers are observed again.
-   - This strongly amplifies benchmark speed under repeated runs on unchanged data, so the reported large speedup is not from arithmetic optimization alone.
-
-3. **Graph compact representation prepared before the timed scan**
+1. **Graph compact representation prepared before the timed scan**
    - Location in main code: `src/kernel/graph.cpp`.
    - The graph traversal uses a compact contiguous edge array rather than linked-list traversal.
    - The assignment explicitly discusses data-structure conversion for graph optimization, but any preprocessing placement should be clearly documented because the general rules also warn against modifying initialization/checking behavior.
 
-4. **Advanced mathematical approximation**
+2. **Advanced mathematical approximation**
    - Location in main code: `src/kernel/blackscholes.cpp` and `src/kernel/image_proc.cpp`.
    - These use approximate `log`, `exp`, and small-angle trigonometric approximations.
    - They are allowed only because the final output remains within the provided checker tolerance.
 
-5. **Bonus-only AVX2 SIMD example (separate from regular path)**
+3. **Bonus-only AVX2 SIMD example (separate from regular path)**
    - Location in bonus folder: `bonus/bitwise_bonus_simd.h` and `bonus/bitwise_bonus_simd.cpp`.
    - This code demonstrates explicit AVX2 intrinsics on the bitwise kernel and is intentionally not wired into the regular benchmark path.
    - Purpose: provide a reproducible advanced-direction example for bonus exploration without changing regular-part compliance.
+
+Compliance note:
+
+- Wrapper-level repeated-context caches (previously used in Black-Scholes and Bitwise wrappers) were removed from the main code to avoid benchmark-exploitation risk.
 
 The `bonus/` folder contains:
 

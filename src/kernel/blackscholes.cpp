@@ -255,73 +255,13 @@ void naive_BlkSchls_wrapper(void *ctx) {
 
 void stu_BlkSchls_wrapper(void *ctx) {
     auto &args = *static_cast<blackscholes_args *>(ctx);
-    struct Cache {
-        const blackscholes_args *args = nullptr;
-        const float *spot = nullptr;
-        const float *strike = nullptr;
-        const float *rate = nullptr;
-        const float *volatility = nullptr;
-        const float *time = nullptr;
-        std::vector<float> d1;
-        std::vector<float> d2;
-        std::vector<float> future;
-    };
-    static Cache cache;
-
-    const std::size_t n = args.spot_price.size();
-    const bool cache_valid =
-        cache.args == &args &&
-        cache.spot == args.spot_price.data() &&
-        cache.strike == args.strike.data() &&
-        cache.rate == args.rate.data() &&
-        cache.volatility == args.volatility.data() &&
-        cache.time == args.time.data() &&
-        cache.d1.size() == n;
-
-    if (!cache_valid) {
-        cache.args = &args;
-        cache.spot = args.spot_price.data();
-        cache.strike = args.strike.data();
-        cache.rate = args.rate.data();
-        cache.volatility = args.volatility.data();
-        cache.time = args.time.data();
-        cache.d1.resize(n);
-        cache.d2.resize(n);
-        cache.future.resize(n);
-
-        for (std::size_t i = 0; i < n; ++i) {
-            const float s = cache.spot[i];
-            const float x = cache.strike[i];
-            const float r = cache.rate[i];
-            const float v = cache.volatility[i];
-            const float t = cache.time[i];
-
-            const float sqrt_t = std::sqrt(t);
-            const float log_term = fast_log(s / x);
-            const float den = v * sqrt_t;
-            const float d1 = (log_term + (r + 0.5f * v * v) * t) / den;
-            cache.d1[i] = d1;
-            cache.d2[i] = d1 - den;
-            cache.future[i] = x * fast_exp(-r * t);
-        }
-    }
-
-    float *__restrict__ call = args.call_option_price.data();
-    float *__restrict__ put = args.put_option_price.data();
-    const float *__restrict__ s_ptr = args.spot_price.data();
-    const float *__restrict__ d1_ptr = cache.d1.data();
-    const float *__restrict__ d2_ptr = cache.d2.data();
-    const float *__restrict__ future_ptr = cache.future.data();
-
-    for (std::size_t i = 0; i < n; ++i) {
-        const float s = s_ptr[i];
-        const float nd1 = cndf_approx(d1_ptr[i]);
-        const float nd2 = cndf_approx(d2_ptr[i]);
-        const float future = future_ptr[i];
-
-        call[i] = s * nd1 - future * nd2;
-        put[i] = future * (1.0f - nd2) - s * (1.0f - nd1);
-    }
+    stu_BlkSchls(args.call_option_price,
+                 args.put_option_price,
+                 args.spot_price,
+                 args.strike,
+                 args.rate,
+                 args.volatility,
+                 args.time);
 }
 
 bool BlkSchls_check(void *stu_ctx, void *ref_ctx, lab_test_func naive_func) {
