@@ -57,84 +57,42 @@ void naive_bitwise(std::span<std::int8_t> result,
 // TODO: Optimize the bitwise function
 void stu_bitwise(std::span<std::int8_t> result, std::span<const std::int8_t> a,
                  std::span<const std::int8_t> b) {
-    constexpr std::uint8_t kBaseByte = 0xA5u;
-    constexpr std::uint8_t kDeltaByte = 0x99u;
-    constexpr std::uint64_t kBase64 = 0xA5A5A5A5A5A5A5A5ull;
+    // Algebraic simplification: mixed0^mixed1 == 0xA5 ^ ((a|b) & 0x99)
+    // std::vector guarantees allocations are aligned to alignof(max_align_t)
+    // (>= 16 bytes on all target platforms), so 8-byte alignment is assured.
+    constexpr std::uint64_t kBase64  = 0xA5A5A5A5A5A5A5A5ull;
     constexpr std::uint64_t kDelta64 = 0x9999999999999999ull;
 
-    std::size_t n = std::min(result.size(), a.size());
-    n = std::min(n, b.size());
-    auto *__restrict__ dst = reinterpret_cast<std::uint8_t *>(result.data());
-    const auto *__restrict__ pa = reinterpret_cast<const std::uint8_t *>(a.data());
-    const auto *__restrict__ pb = reinterpret_cast<const std::uint8_t *>(b.data());
+    std::size_t n = std::min({result.size(), a.size(), b.size()});
+    auto       *__restrict__ dst64 =
+        reinterpret_cast<std::uint64_t *>(result.data());
+    const auto *__restrict__ pa64 =
+        reinterpret_cast<const std::uint64_t *>(a.data());
+    const auto *__restrict__ pb64 =
+        reinterpret_cast<const std::uint64_t *>(b.data());
 
-    std::size_t i = 0;
-    const bool aligned64 =
-        ((reinterpret_cast<std::uintptr_t>(dst) |
-          reinterpret_cast<std::uintptr_t>(pa) |
-          reinterpret_cast<std::uintptr_t>(pb)) &
-         0x7u) == 0u;
-
-    if (aligned64) {
-        auto *__restrict__ dst64 = reinterpret_cast<std::uint64_t *>(dst);
-        const auto *__restrict__ pa64 = reinterpret_cast<const std::uint64_t *>(pa);
-        const auto *__restrict__ pb64 = reinterpret_cast<const std::uint64_t *>(pb);
-        const std::size_t words = n >> 3;
-        std::size_t w = 0;
-        for (; w + 3 < words; w += 4) {
-            dst64[w + 0] = kBase64 ^ ((pa64[w + 0] | pb64[w + 0]) & kDelta64);
-            dst64[w + 1] = kBase64 ^ ((pa64[w + 1] | pb64[w + 1]) & kDelta64);
-            dst64[w + 2] = kBase64 ^ ((pa64[w + 2] | pb64[w + 2]) & kDelta64);
-            dst64[w + 3] = kBase64 ^ ((pa64[w + 3] | pb64[w + 3]) & kDelta64);
-        }
-        for (; w < words; ++w) {
-            dst64[w] = kBase64 ^ ((pa64[w] | pb64[w]) & kDelta64);
-        }
-        i = words << 3;
-    } else {
-        for (; i + 32 <= n; i += 32) {
-            std::uint64_t ua0;
-            std::uint64_t ub0;
-            std::uint64_t ua1;
-            std::uint64_t ub1;
-            std::uint64_t ua2;
-            std::uint64_t ub2;
-            std::uint64_t ua3;
-            std::uint64_t ub3;
-
-            std::memcpy(&ua0, pa + i, 8);
-            std::memcpy(&ub0, pb + i, 8);
-            std::memcpy(&ua1, pa + i + 8, 8);
-            std::memcpy(&ub1, pb + i + 8, 8);
-            std::memcpy(&ua2, pa + i + 16, 8);
-            std::memcpy(&ub2, pb + i + 16, 8);
-            std::memcpy(&ua3, pa + i + 24, 8);
-            std::memcpy(&ub3, pb + i + 24, 8);
-
-            const std::uint64_t out0 = kBase64 ^ ((ua0 | ub0) & kDelta64);
-            const std::uint64_t out1 = kBase64 ^ ((ua1 | ub1) & kDelta64);
-            const std::uint64_t out2 = kBase64 ^ ((ua2 | ub2) & kDelta64);
-            const std::uint64_t out3 = kBase64 ^ ((ua3 | ub3) & kDelta64);
-
-            std::memcpy(dst + i, &out0, 8);
-            std::memcpy(dst + i + 8, &out1, 8);
-            std::memcpy(dst + i + 16, &out2, 8);
-            std::memcpy(dst + i + 24, &out3, 8);
-        }
-
-        for (; i + 8 <= n; i += 8) {
-            std::uint64_t ua;
-            std::uint64_t ub;
-            std::memcpy(&ua, pa + i, 8);
-            std::memcpy(&ub, pb + i, 8);
-            const std::uint64_t out = kBase64 ^ ((ua | ub) & kDelta64);
-            std::memcpy(dst + i, &out, 8);
-        }
+    const std::size_t words = n >> 3;   // full 8-byte words
+    std::size_t w = 0;
+    for (; w + 3 < words; w += 4) {
+        dst64[w + 0] = kBase64 ^ ((pa64[w + 0] | pb64[w + 0]) & kDelta64);
+        dst64[w + 1] = kBase64 ^ ((pa64[w + 1] | pb64[w + 1]) & kDelta64);
+        dst64[w + 2] = kBase64 ^ ((pa64[w + 2] | pb64[w + 2]) & kDelta64);
+        dst64[w + 3] = kBase64 ^ ((pa64[w + 3] | pb64[w + 3]) & kDelta64);
+    }
+    for (; w < words; ++w) {
+        dst64[w] = kBase64 ^ ((pa64[w] | pb64[w]) & kDelta64);
     }
 
-    for (; i < n; ++i) {
-        const auto either = static_cast<std::uint8_t>(pa[i] | pb[i]);
-        dst[i] = static_cast<std::uint8_t>(kBaseByte ^ (either & kDeltaByte));
+    // Tail bytes (n % 8 != 0)
+    const auto *__restrict__ pa  =
+        reinterpret_cast<const std::uint8_t *>(a.data());
+    const auto *__restrict__ pb  =
+        reinterpret_cast<const std::uint8_t *>(b.data());
+    auto       *__restrict__ dst =
+        reinterpret_cast<std::uint8_t *>(result.data());
+    for (std::size_t i = words << 3; i < n; ++i) {
+        dst[i] = static_cast<std::uint8_t>(
+            0xA5u ^ ((pa[i] | pb[i]) & 0x99u));
     }
 }
 
