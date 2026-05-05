@@ -70,10 +70,6 @@ void stu_bitwise(std::span<std::int8_t> result, std::span<const std::int8_t> a,
 
     std::size_t i = 0;
     for (; i + 32 <= n; i += 32) {
-#if defined(__GNUC__)
-        __builtin_prefetch(pa + i + 256, 0, 1);
-        __builtin_prefetch(pb + i + 256, 0, 1);
-#endif
         std::uint64_t ua0;
         std::uint64_t ub0;
         std::uint64_t ua1;
