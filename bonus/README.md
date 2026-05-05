@@ -45,28 +45,6 @@ Build note:
 - This is an advanced/bonus threading prototype. The regular
   `src/kernel/matmul.cpp` remains single-threaded.
 
-### OpenMP Image Proc Prototype
-
-Files:
-
-- `image_proc_bonus_omp.h`
-- `image_proc_bonus_omp.cpp`
-
-Purpose:
-
-- Uses OpenMP to split the flattened pixel loop across 16 threads.
-- Keeps the regular inlined image pipeline unchanged: gain/shift/limit, gray,
-  contrast, HDR compression, mask, and importance weighting.
-- Each pixel writes one independent output element, so the parallel loop has no
-  cross-thread reduction or write conflict.
-
-Build note:
-
-- `bonus/CMakeLists.txt` uses `find_package(OpenMP QUIET)`.
-- On the course server with g++/OpenMP support, this target is compiled with
-  OpenMP flags. If OpenMP is not found locally, it still builds as a serial
-  reference so the bonus directory remains portable.
-
 ## Removed / Not Kept
 
 - `bonus_notes.cpp` was removed because it was documentation-only code and did

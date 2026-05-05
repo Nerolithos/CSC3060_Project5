@@ -7,18 +7,6 @@ target_include_directories(matmul_bonus_threaded PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-find_package(OpenMP QUIET)
-add_library(image_proc_bonus_omp OBJECT image_proc_bonus_omp.cpp)
-target_compile_features(image_proc_bonus_omp PRIVATE cxx_std_23)
-target_include_directories(image_proc_bonus_omp PRIVATE
-	${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-if(OpenMP_CXX_FOUND)
-	target_link_libraries(image_proc_bonus_omp PRIVATE OpenMP::OpenMP_CXX)
-else()
-	message(STATUS "OpenMP not found; image_proc_bonus_omp builds as serial reference")
-endif()
-
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|i[3-6]86)$")
 	add_library(bitwise_bonus_simd OBJECT bitwise_bonus_simd.cpp)
 	target_compile_features(bitwise_bonus_simd PRIVATE cxx_std_23)

@@ -84,37 +84,49 @@ void stu_grff(grff_args& args) {
     }
 
     static thread_local std::vector<float> a_prime;
-    static thread_local std::vector<float> gate;
     a_prime.resize(n);
-    gate.resize(n);
 
     const float *__restrict__ a = args.a_features.data();
     const float *__restrict__ b = args.b_features.data();
     const float *__restrict__ c = args.c_features.data();
     float *__restrict__ out = args.f_output.data();
+    float *__restrict__ ap_data = a_prime.data();
 
     float sum_a = 0.0f;
     for (size_t i = 0; i < n; ++i) {
         const float ab = a[i] * b[i];
         const float g = 0.5f * ((ab / (1.0f + std::abs(ab))) + 1.0f);
         const float ap = a[i] + g;
-        gate[i] = g;
-        a_prime[i] = ap;
+        ap_data[i] = ap;
         sum_a += ap;
     }
     const float avg_a = sum_a / static_cast<float>(n);
 
-    float prev_ap = a_prime[0];
-    for (size_t i = 0; i < n; ++i) {
-        const float ap = a_prime[i];
-        const float smooth = (i == 0) ? ap : ((ap + prev_ap) * 0.5f);
+    float ap = ap_data[0];
+    float prev_ap = ap;
+    {
+        const float smooth = ap;
+        const float g = ap - a[0];
+        const float b_prime = b[0] * (1.0f - g) * avg_a;
+        const float smooth_abs = std::abs(smooth);
+        const float c_prime = c[0] + (smooth / (1.0f + smooth_abs));
+        const float h = smooth * c_prime;
+        const float e = (h + b_prime) / (1.0f + smooth_abs);
+        const float result = c_prime - e;
+        out[0] = std::max(result, 0.0f);
+    }
+
+    for (size_t i = 1; i < n; ++i) {
+        ap = ap_data[i];
+        const float smooth = (ap + prev_ap) * 0.5f;
         prev_ap = ap;
 
-        const float g = gate[i];
+        const float g = ap - a[i];
         const float b_prime = b[i] * (1.0f - g) * avg_a;
-        const float c_prime = c[i] + (smooth / (1.0f + std::abs(smooth)));
+        const float smooth_abs = std::abs(smooth);
+        const float c_prime = c[i] + (smooth / (1.0f + smooth_abs));
         const float h = smooth * c_prime;
-        const float e = (h + b_prime) / (1.0f + std::abs(smooth));
+        const float e = (h + b_prime) / (1.0f + smooth_abs);
         const float result = c_prime - e;
         out[i] = std::max(result, 0.0f);
     }
