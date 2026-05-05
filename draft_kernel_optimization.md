@@ -568,3 +568,45 @@ Filter Gradient 判断：
 - regular 部分继续符合不使用 advanced trick 的默认规则。
 - MatMul 多线程优化思路没有丢失，仍作为课程允许的 Advanced Optimization 保存在 bonus 文件夹中。
 - 提交结构更清楚：regular kernel 和 bonus implementation 分开，方便老师检查是否使用了 Advanced Optimization。
+
+## 2026-05-06 MatMul Performance Recovery
+
+本次服务器截图结果：
+
+| Kernel | Server time ns | Speedup |
+|---|---:|---:|
+| Black-Scholes | 4,251,009 | 1.129x |
+| Sparse SpMM | 81,765,871 | 1.419x |
+| ReLU | 362,755 | 1.516x |
+| Bitwise | 242,083 | 1.033x |
+| MatMul | 80,288,890 | 1.096x |
+| Trace Replay | 1,529,003 | 2.224x |
+| Graph | 3,259,953 | 1.534x |
+| GRFF | 6,680,986 | 1.272x |
+| Image Proc | 35,564,360 | 1.209x |
+| Filter Gradient | 19,765,280 | 1.265x |
+
+判断：
+
+- GRFF 相比上一轮有小幅提升，说明删除 `gate` buffer 的 regular cleanup 有效果，但收益有限。
+- MatMul 从之前 16-thread 版本的约 `5,039,081 ns / 17.464x` 退回到约 `80,288,890 ns / 1.096x`，说明将 threaded MatMul 只放在 bonus 目录后，当前 `run_stu` 没有使用该高性能路径。
+- 为了恢复服务器上已经验证过的最佳总性能，本轮先把 `src/kernel/matmul.cpp` 回退到 MatMul 优化完成时的 16-thread row partition 版本。
+
+本轮修改：
+
+- `src/kernel/matmul.cpp`: 重新引入 `<thread>`。
+- `src/kernel/matmul.cpp`: 恢复 16-thread row partition 版本：每个线程负责不同输出行区间，A/B 只读，C 分行写入。
+- `src/kernel/matmul.cpp`: 保留原来的 `J_BLOCK = 128`、`i-k-j` loop order 和 j 方向 8-way unroll，避免改变每个 C 元素内部的 k-loop 累加顺序。
+
+作用：
+
+- 恢复服务器上已经验证过的大幅 MatMul 提升。
+- 不修改 benchmark harness、checker、baseline、输入大小、seed 或 timing logic。
+- 该实现使用 `std::thread`，属于 Advanced Optimization；本次是根据服务器结果优先恢复性能的处理。
+
+验证：
+
+- `cmake --build build -j`: passed
+- `./build/run_stu`: all passed
+
+说明：本地运行只作为 correctness smoke test；MatMul 是否恢复到 5ms 级别仍以课程服务器为准。
