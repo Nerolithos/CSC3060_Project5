@@ -32,10 +32,9 @@ constexpr BonusItem kBonusItems[] = {
         "operations while staying within checker tolerance.",
     },
     {
-        "Bonus example: OpenMP matmul",
-        "bonus/matmul_bonus_openmp.cpp",
-        "Parallelizes blocked matrix multiplication across independent output "
-        "tiles using OpenMP.",
+        "Bonus example: AVX2 bitwise",
+        "bonus/bitwise_bonus_simd.cpp",
+        "Uses AVX2 intrinsics to compute 32 int8 lanes per iteration.",
     },
 };
 

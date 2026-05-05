@@ -48,47 +48,37 @@ void stu_matmul(std::vector<float>& C,
                 const std::vector<float>& A,
                 const std::vector<float>& B,
                 int n) {
+    constexpr int J_BLOCK = 128;
+
     std::fill(C.begin(), C.end(), 0.0f);
 
     for (int i = 0; i < n; ++i) {
-        float *__restrict__ c_row = C.data() + static_cast<std::size_t>(i) * n;
-        const float *__restrict__ a_row =
+        float* __restrict__ c_row = C.data() + static_cast<std::size_t>(i) * n;
+        const float* __restrict__ a_row =
             A.data() + static_cast<std::size_t>(i) * n;
 
-        for (int k = 0; k < n; ++k) {
-            const float av = a_row[k];
-            const float *__restrict__ b_row =
-                B.data() + static_cast<std::size_t>(k) * n;
+        for (int jj = 0; jj < n; jj += J_BLOCK) {
+            const int j_end = std::min(jj + J_BLOCK, n);
 
-            int j = 0;
-            for (; j + 7 < n; j += 8) {
-                c_row[j + 0] += av * b_row[j + 0];
-                c_row[j + 1] += av * b_row[j + 1];
-                c_row[j + 2] += av * b_row[j + 2];
-                c_row[j + 3] += av * b_row[j + 3];
-                c_row[j + 4] += av * b_row[j + 4];
-                c_row[j + 5] += av * b_row[j + 5];
-                c_row[j + 6] += av * b_row[j + 6];
-                c_row[j + 7] += av * b_row[j + 7];
-            }
-            for (; j < n; ++j) {
-                c_row[j] += av * b_row[j];
-            }
-        }
-    }
+            for (int k = 0; k < n; ++k) {
+                const float av = a_row[k];
+                const float* __restrict__ b_row =
+                    B.data() + static_cast<std::size_t>(k) * n;
 
-    for (int i = 0; i < n; ++i) {
-        const float *__restrict__ a_row =
-            A.data() + static_cast<std::size_t>(i) * n;
-        float *__restrict__ c_row = C.data() + static_cast<std::size_t>(i) * n;
-
-        for (int j = 0; j < n; ++j) {
-            if (std::abs(c_row[j]) < 0.25f) {
-                float sum = 0.0f;
-                for (int k = 0; k < n; ++k) {
-                    sum += a_row[k] * B[static_cast<std::size_t>(k) * n + j];
+                int j = jj;
+                for (; j + 7 < j_end; j += 8) {
+                    c_row[j + 0] += av * b_row[j + 0];
+                    c_row[j + 1] += av * b_row[j + 1];
+                    c_row[j + 2] += av * b_row[j + 2];
+                    c_row[j + 3] += av * b_row[j + 3];
+                    c_row[j + 4] += av * b_row[j + 4];
+                    c_row[j + 5] += av * b_row[j + 5];
+                    c_row[j + 6] += av * b_row[j + 6];
+                    c_row[j + 7] += av * b_row[j + 7];
                 }
-                c_row[j] = sum;
+                for (; j < j_end; ++j) {
+                    c_row[j] += av * b_row[j];
+                }
             }
         }
     }
