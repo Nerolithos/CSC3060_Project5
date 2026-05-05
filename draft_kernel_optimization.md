@@ -547,3 +547,68 @@ Filter Gradient 判断：
 - `./build/run_stu`: all passed
 
 说明：本地 MatMul 性能只用于 sanity check；真实收益需要看课程服务器，因为服务器 CPU core count/cache 与本地设备不同。
+
+## 2026-05-05 Advanced Optimization Placement Rule
+
+新增全局规则：
+
+- 后续如果使用课程允许的 Advanced Optimization，例如 `std::thread`、OpenMP、SIMD intrinsics、CUDA 或高级 profiling 指导下的特殊实现，不直接覆盖 regular kernel 文件。
+- regular `src/kernel/` 文件应保持常规提交路径；advanced/bonus 版本单独放入 `bonus/` 文件夹，并更新 `bonus/CMakeLists.txt`。
+- 每次修改仍然需要在本文档末尾追加 log，说明改动内容、原因和是否属于 advanced/bonus。
+
+本次按新规则修正 Round 8 的 MatMul 更新：
+
+- 恢复 `src/kernel/matmul.cpp` 为单线程 blocked regular 版本，不在 regular path 中使用 `std::thread`。
+- 新增 `bonus/matmul_bonus_threaded.h` 和 `bonus/matmul_bonus_threaded.cpp`，保存 Round 8 的 MatMul row-partition threading 实现。
+- 更新 `bonus/CMakeLists.txt`，新增 `matmul_bonus_threaded` object target。
+- 更新 `bonus/README.md`，说明 threaded MatMul 是 Advanced Optimization / bonus prototype，regular `src/kernel/matmul.cpp` 保持单线程。
+
+作用：
+
+- regular 部分继续符合不使用 advanced trick 的默认规则。
+- MatMul 多线程优化思路没有丢失，仍作为课程允许的 Advanced Optimization 保存在 bonus 文件夹中。
+- 提交结构更清楚：regular kernel 和 bonus implementation 分开，方便老师检查是否使用了 Advanced Optimization。
+
+## 2026-05-05 Server Feedback Round 9: Image Proc Bonus OpenMP
+
+本次服务器截图结果：
+
+| Kernel | Server time ns | Speedup |
+|---|---:|---:|
+| Black-Scholes | 3,958,011 | 1.213x |
+| Sparse SpMM | 80,645,268 | 1.438x |
+| ReLU | 359,811 | 1.529x |
+| Bitwise | 245,155 | 1.020x |
+| MatMul | 5,039,081 | 17.464x |
+| Trace Replay | 1,526,272 | 2.228x |
+| Graph | 2,982,652 | 1.676x |
+| GRFF | 6,859,673 | 1.239x |
+| Image Proc | 35,662,432 | 1.206x |
+| Filter Gradient | 19,499,348 | 1.282x |
+
+判断：
+
+- MatMul 的 16-thread 方向在服务器上非常有效，说明课程服务器的 40 logical CPUs 对这类大循环有明显收益。
+- Image Proc 仍约 35.7ms，且每个 pixel 的计算彼此独立；当前 regular 版本已经展开 stage，主要瓶颈是每个像素上的 sqrt、mask、weight 等 scalar work。因此按 flattened pixel index 做 OpenMP static parallel for 是可行的 bonus 方向。
+- 根据新增全局规则，本轮不修改 `src/kernel/image_proc.cpp`，只新增 bonus 版本。
+
+本轮修改：
+
+- 新增 `bonus/image_proc_bonus_omp.h` 和 `bonus/image_proc_bonus_omp.cpp`。
+- `bonus_image_proc_omp` 复用 regular inlined image pipeline，并在 flattened pixel loop 上使用 `#pragma omp parallel for schedule(static) num_threads(16)`。
+- 更新 `bonus/CMakeLists.txt`：使用 `find_package(OpenMP QUIET)`，新增 `image_proc_bonus_omp` object target；服务器上若 OpenMP 可用则链接 `OpenMP::OpenMP_CXX`，本地找不到 OpenMP 时仍可作为串行参考编译。
+- 更新 `bonus/README.md`：说明 Image Proc OpenMP 是 advanced/bonus prototype，regular kernel 不变。
+
+作用：
+
+- 这是课程允许的 Advanced Optimization：使用 OpenMP/threading framework 利用多核 CPU。
+- Image Proc 输出无跨像素依赖，每个线程写不同 output index，不需要 reduction，也不会改变单个 pixel 的计算公式。
+- 不修改测试文件、baseline、输入、checker、timing logic，也不把服务器结果硬编码进代码。
+
+验证：
+
+- `cmake --build build -j`: passed
+- `cmake -S bonus -B /tmp/csc3060_bonus_build`: passed
+- `cmake --build /tmp/csc3060_bonus_build -j`: passed
+
+说明：该实现属于 bonus 文件夹中的 advanced 方案；是否接入课程 bonus 评测需要按老师要求选择对应 bonus entry。
