@@ -1,6 +1,7 @@
 #include "bitwise.h"
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <random>
 
@@ -56,8 +57,10 @@ void naive_bitwise(std::span<std::int8_t> result,
 // TODO: Optimize the bitwise function
 void stu_bitwise(std::span<std::int8_t> result, std::span<const std::int8_t> a,
                  std::span<const std::int8_t> b) {
-    constexpr std::uint8_t kNotMaskLo = 0xA5u;
-    constexpr std::uint8_t kNotMaskHi = 0x3Cu;
+    constexpr std::uint8_t kBaseByte = 0xA5u;
+    constexpr std::uint8_t kDeltaByte = static_cast<std::uint8_t>(0xA5u ^ 0x3Cu);
+    constexpr std::uint64_t kBase64 = 0xA5A5A5A5A5A5A5A5ull;
+    constexpr std::uint64_t kDelta64 = 0x9999999999999999ull;
 
     std::size_t n = std::min(result.size(), a.size());
     n = std::min(n, b.size());
@@ -65,10 +68,40 @@ void stu_bitwise(std::span<std::int8_t> result, std::span<const std::int8_t> a,
     const auto *__restrict__ pa = reinterpret_cast<const std::uint8_t *>(a.data());
     const auto *__restrict__ pb = reinterpret_cast<const std::uint8_t *>(b.data());
 
-    for (std::size_t i = 0; i < n; ++i) {
+    std::size_t i = 0;
+    for (; i + 32 <= n; i += 32) {
+        std::uint64_t ua0, ub0, ua1, ub1, ua2, ub2, ua3, ub3;
+        std::memcpy(&ua0, pa + i, 8);
+        std::memcpy(&ub0, pb + i, 8);
+        std::memcpy(&ua1, pa + i + 8, 8);
+        std::memcpy(&ub1, pb + i + 8, 8);
+        std::memcpy(&ua2, pa + i + 16, 8);
+        std::memcpy(&ub2, pb + i + 16, 8);
+        std::memcpy(&ua3, pa + i + 24, 8);
+        std::memcpy(&ub3, pb + i + 24, 8);
+
+        const std::uint64_t out0 = kBase64 ^ ((ua0 | ub0) & kDelta64);
+        const std::uint64_t out1 = kBase64 ^ ((ua1 | ub1) & kDelta64);
+        const std::uint64_t out2 = kBase64 ^ ((ua2 | ub2) & kDelta64);
+        const std::uint64_t out3 = kBase64 ^ ((ua3 | ub3) & kDelta64);
+
+        std::memcpy(dst + i, &out0, 8);
+        std::memcpy(dst + i + 8, &out1, 8);
+        std::memcpy(dst + i + 16, &out2, 8);
+        std::memcpy(dst + i + 24, &out3, 8);
+    }
+
+    for (; i + 8 <= n; i += 8) {
+        std::uint64_t ua, ub;
+        std::memcpy(&ua, pa + i, 8);
+        std::memcpy(&ub, pb + i, 8);
+        const std::uint64_t out = kBase64 ^ ((ua | ub) & kDelta64);
+        std::memcpy(dst + i, &out, 8);
+    }
+
+    for (; i < n; ++i) {
         const auto either = static_cast<std::uint8_t>(pa[i] | pb[i]);
-        dst[i] = static_cast<std::uint8_t>((~either & kNotMaskLo) |
-                                           (either & kNotMaskHi));
+        dst[i] = static_cast<std::uint8_t>(kBaseByte ^ (either & kDeltaByte));
     }
 }
 
