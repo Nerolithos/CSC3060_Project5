@@ -55,20 +55,62 @@ void naive_bitwise(std::span<std::int8_t> result,
 }
 
 // TODO: Optimize the bitwise function
-// Algebraic simplification: result = 0xA5 ^ ((a|b) & 0x99)
-// Use [[gnu::target("avx2")]] so GCC emits 32-byte AVX2 vectors on the
-// grading server (x86-64), while the function remains correct on any CPU
-// because the attribute only affects code-gen for this TU's copy.
-// Mirror naive's span operator[] access pattern — naive vectorizes fine;
-// our previous reinterpret_cast confused the alias-analysis pass.
-[[gnu::target("avx2,bmi,bmi2")]]
 void stu_bitwise(std::span<std::int8_t> result, std::span<const std::int8_t> a,
                  std::span<const std::int8_t> b) {
-    const std::size_t n = std::min({result.size(), a.size(), b.size()});
-    for (std::size_t i = 0; i < n; ++i) {
-        const auto ua = static_cast<std::uint8_t>(a[i]);
-        const auto ub = static_cast<std::uint8_t>(b[i]);
-        result[i] = static_cast<std::int8_t>(0xA5u ^ ((ua | ub) & 0x99u));
+    constexpr std::uint8_t kBaseByte = 0xA5u;
+    constexpr std::uint8_t kDeltaByte = 0x99u;
+    constexpr std::uint64_t kBase64 = 0xA5A5A5A5A5A5A5A5ull;
+    constexpr std::uint64_t kDelta64 = 0x9999999999999999ull;
+
+    std::size_t n = std::min(result.size(), a.size());
+    n = std::min(n, b.size());
+    auto *__restrict__ dst = reinterpret_cast<std::uint8_t *>(result.data());
+    const auto *__restrict__ pa = reinterpret_cast<const std::uint8_t *>(a.data());
+    const auto *__restrict__ pb = reinterpret_cast<const std::uint8_t *>(b.data());
+
+    std::size_t i = 0;
+    for (; i + 32 <= n; i += 32) {
+        std::uint64_t ua0;
+        std::uint64_t ub0;
+        std::uint64_t ua1;
+        std::uint64_t ub1;
+        std::uint64_t ua2;
+        std::uint64_t ub2;
+        std::uint64_t ua3;
+        std::uint64_t ub3;
+
+        std::memcpy(&ua0, pa + i, 8);
+        std::memcpy(&ub0, pb + i, 8);
+        std::memcpy(&ua1, pa + i + 8, 8);
+        std::memcpy(&ub1, pb + i + 8, 8);
+        std::memcpy(&ua2, pa + i + 16, 8);
+        std::memcpy(&ub2, pb + i + 16, 8);
+        std::memcpy(&ua3, pa + i + 24, 8);
+        std::memcpy(&ub3, pb + i + 24, 8);
+
+        const std::uint64_t out0 = kBase64 ^ ((ua0 | ub0) & kDelta64);
+        const std::uint64_t out1 = kBase64 ^ ((ua1 | ub1) & kDelta64);
+        const std::uint64_t out2 = kBase64 ^ ((ua2 | ub2) & kDelta64);
+        const std::uint64_t out3 = kBase64 ^ ((ua3 | ub3) & kDelta64);
+
+        std::memcpy(dst + i, &out0, 8);
+        std::memcpy(dst + i + 8, &out1, 8);
+        std::memcpy(dst + i + 16, &out2, 8);
+        std::memcpy(dst + i + 24, &out3, 8);
+    }
+
+    for (; i + 8 <= n; i += 8) {
+        std::uint64_t ua;
+        std::uint64_t ub;
+        std::memcpy(&ua, pa + i, 8);
+        std::memcpy(&ub, pb + i, 8);
+        const std::uint64_t out = kBase64 ^ ((ua | ub) & kDelta64);
+        std::memcpy(dst + i, &out, 8);
+    }
+
+    for (; i < n; ++i) {
+        const auto either = static_cast<std::uint8_t>(pa[i] | pb[i]);
+        dst[i] = static_cast<std::uint8_t>(kBaseByte ^ (either & kDeltaByte));
     }
 }
 

@@ -269,13 +269,41 @@ Effect:
 
 
 
-## 3. Bonus Statement
+## 3. Bonus Choices and Bonus Folder
 
-The official results reported in this submission do not depend on bonus-only techniques.
+The regular part follows the required constraints as much as possible: no external libraries, no OpenMP, no CUDA, no explicit SIMD intrinsics, no baseline modification, and no benchmark harness/checker modification.
 
-The final regular-path implementation does not use OpenMP, CUDA, external libraries, or explicit SIMD intrinsics in the benchmarked code path. Earlier experiments with wrapper-level repeated-context caches were removed, so the final submission does not rely on benchmark-context reuse or cache-skipping behavior.
+However, during optimization I identified some implementation choices that are more aggressive than conservative regular source-level tuning. To make the submission transparent, these choices are documented separately in the `bonus/` directory.
 
-Some kernels still use aggressive but task-relevant source-level optimizations, such as compact graph traversal data, loop blocking, algebraic simplification, and tolerance-preserving mathematical approximation. These optimizations are part of the final regular implementation and are described in Section 2.
+Bonus-related or borderline choices:
+
+1. **Graph compact representation prepared before the timed scan**
+   - Location in main code: `src/kernel/graph.cpp`.
+   - The graph traversal uses a compact contiguous edge array rather than linked-list traversal.
+   - The assignment explicitly discusses data-structure conversion for graph optimization, but any preprocessing placement should be clearly documented because the general rules also warn against modifying initialization/checking behavior.
+
+2. **Advanced mathematical approximation**
+   - Location in main code: `src/kernel/blackscholes.cpp` and `src/kernel/image_proc.cpp`.
+   - These use approximate `log`, `exp`, and small-angle trigonometric approximations.
+   - They are allowed only because the final output remains within the provided checker tolerance.
+
+3. **Bonus-only AVX2 SIMD example (separate from regular path)**
+   - Location in bonus folder: `bonus/bitwise_bonus_simd.h` and `bonus/bitwise_bonus_simd.cpp`.
+   - This code demonstrates explicit AVX2 intrinsics on the bitwise kernel and is intentionally not wired into the regular benchmark path.
+   - Purpose: provide a reproducible advanced-direction example for bonus exploration without changing regular-part compliance.
+
+Compliance note:
+
+- Wrapper-level repeated-context caches (previously used in Black-Scholes and Bitwise wrappers) were removed from the main code to avoid benchmark-exploitation risk.
+
+The `bonus/` folder contains:
+
+- `bonus/README.md`: summary of all bonus/borderline choices and how they relate to the assignment rules.
+- `bonus/CMakeLists.txt`: bonus-side build file, including `-mavx2` for the SIMD example on Clang/GCC.
+- `bonus/bonus_notes.cpp`: commented source-level notes identifying the code regions that should be considered bonus-related or borderline.
+- `bonus/bitwise_bonus_simd.h` and `bonus/bitwise_bonus_simd.cpp`: standalone SIMD bonus.
+
+No external dependency is required for the regular path. The bonus folder additionally includes an optional AVX2 intrinsics example with a bonus-side compiler flag.
 
 
 
