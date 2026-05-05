@@ -33,3 +33,6 @@ target_link_libraries(run_all PRIVATE kernels)
 
 add_executable(run_stu src/main/run_stu.cpp)
 target_link_libraries(run_stu PRIVATE kernels)
+
+# ---- Bonus ----
+add_subdirectory(bonus)

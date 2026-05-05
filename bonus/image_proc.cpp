@@ -135,9 +135,20 @@ void naive_image_proc_bonus(image_proc_args_bonus& state) {
     }
 }
 
+// Small-angle sin/cos approximations (same as regular student path)
+static inline float bonus_sin(float x) {
+    const float x2 = x * x;
+    return x * (1.0f - x2 * (1.0f / 6.0f));
+}
+static inline float bonus_cos(float x) {
+    const float x2 = x * x;
+    return 1.0f - 0.5f * x2 + (x2 * x2) * (1.0f / 24.0f);
+}
+
 void stu_image_proc_bonus(image_proc_args_bonus& state) {
     const size_t w = state.width;
     const size_t h = state.height;
+    const size_t n = w * h;
     float* __restrict__ out = state.output.data();
     const float* __restrict__ r = state.r_channel.data();
     const float* __restrict__ g = state.g_channel.data();
@@ -147,23 +158,55 @@ void stu_image_proc_bonus(image_proc_args_bonus& state) {
 #if defined(_OPENMP)
 #pragma omp parallel for schedule(static)
 #endif
-    for (std::ptrdiff_t y = 0; y < static_cast<std::ptrdiff_t>(h); ++y) {
-        for (size_t x = 0; x < w; ++x) {
-            const size_t idx = static_cast<size_t>(y) * w + x;
+    for (std::ptrdiff_t i = 0; i < static_cast<std::ptrdiff_t>(n); ++i) {
+        // Stage 1: color_correct = clamp(v*1.05+0.02, 0,1)
+        float r_val = r[i] * 1.05f + 0.02f;
+        float g_val = g[i] * 1.05f + 0.02f;
+        float b_val = b[i] * 1.05f + 0.02f;
+        r_val = std::min(r_val, 1.0f);
+        g_val = std::min(g_val, 1.0f);
+        b_val = std::min(b_val, 1.0f);
 
-            const float r_val = color_correct(r[idx]);
-            const float g_val = color_correct(g[idx]);
-            const float b_val = color_correct(b[idx]);
+        // Stage 2: compute_gray
+        const float gray = r_val * 0.299f + g_val * 0.587f + b_val * 0.114f;
 
-            const float gray = compute_gray(r_val, g_val, b_val);
-            const float gray_enhance = enhance_contrast(gray);
-            const float compress_val = hdr_compress(gray_enhance);
-            const float mask =
-                complex_mask_logic(compress_val, r_val, g_val, b_val, threshold);
-            const float weight = importance_weight(mask);
+        // Stage 3: enhance_contrast (smoothstep)
+        const float adj = std::clamp((gray - 0.05f) / 0.90f, 0.0f, 1.0f);
+        const float gray_enhance = adj * adj * (3.0f - 2.0f * adj);
 
-            out[idx] = std::clamp(compress_val * weight, 0.0f, 1.0f);
+        // Stage 4: hdr_compress
+        const float intensity = gray_enhance * 1.2f;
+        const float half_i = intensity * 0.5f;
+        const float gain_base = std::sqrt(half_i * half_i + 0.1f);
+        const float gain = (gain_base > 1.0f) ? (1.0f / gain_base) : (gain_base * 0.95f);
+        const float hdr = gray_enhance * gain;
+        const float compress_val = hdr / (1.0f + hdr);
+
+        // Stage 5: complex_mask_logic (fully inlined, approx sin/cos)
+        constexpr float p0=0.11f, p1=0.22f, p2=0.33f, p3=0.44f;
+        constexpr float p4=0.55f, p5=0.66f, p6=0.77f, p7=0.88f;
+        constexpr float p8=0.99f, p9=1.01f;
+        float mask;
+        if (compress_val > threshold) {
+            mask = (r_val * p0) + (g_val * p1) - (b_val * p2) + p9;
+            mask = (mask > 0.8f) ? (mask * p3) : (mask + p4);
+        } else {
+            mask = (r_val * p5) - (g_val * p6) + (b_val * p7) - p8;
+            mask = (mask < 0.2f) ? (mask + p1) : (mask * p2);
         }
+        const float noise = bonus_sin(compress_val * p0) * bonus_cos(r_val * p1);
+        mask = std::clamp(mask * 0.7f + noise * 0.3f, 0.0f, 1.0f);
+
+        // Stage 6: importance_weight (LUT interpolation)
+        static constexpr float lut[] = {0.0f, 0.3f, 1.0f, 0.3f, 0.0f};
+        const float scaled = mask * 4.0f;
+        const int idx = std::clamp(static_cast<int>(scaled), 0, 4);
+        const float frac = scaled - static_cast<float>(idx);
+        const float weight = (idx < 4)
+            ? (lut[idx] * (1.0f - frac) + lut[idx + 1] * frac)
+            : lut[4];
+
+        out[i] = std::clamp(compress_val * weight, 0.0f, 1.0f);
     }
 }
 
