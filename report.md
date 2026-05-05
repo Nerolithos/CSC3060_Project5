@@ -37,18 +37,18 @@ Final server-side benchmark results:
 
 | **Benchmark**             | **Status** | **Nanoseconds** | **Speedup** |
 |---|---:|---:|---:|
-| Black-Scholes (Student)   |     PASSED |    2,596,673 ns |      1.849x |
-| Sparse SpMM (Student)     |     PASSED |   80,007,634 ns |      1.450x |
-| ReLU (Student)            |     PASSED |      360,461 ns |      1.526x |
-| Bitwise (Student)         |     PASSED |       13,338 ns |     18.743x |
-| MatMul (Student)          |     PASSED |   82,243,577 ns |      1.070x |
-| Trace Replay (Student)    |     PASSED |    1,522,622 ns |      2.233x |
-| Graph (Student)           |     PASSED |    3,135,555 ns |      1.595x |
-| GRFF (Student)            |     PASSED |    6,549,920 ns |      1.298x |
-| Image Proc (Student)      |     PASSED |   33,075,686 ns |      1.300x |
-| Filter Gradient (Student) |     PASSED |   20,040,620 ns |      1.247x |
+| Black-Scholes (Student)   |     PASSED |    3,935,641 ns |      1.220x |
+| Sparse SpMM (Student)     |     PASSED |   80,270,653 ns |      1.445x |
+| ReLU (Student)            |     PASSED |      353,281 ns |      1.557x |
+| Bitwise (Student)         |     PASSED |      244,508 ns |      1.022x |
+| MatMul (Student)          |     PASSED |   72,229,194 ns |      1.218x |
+| Trace Replay (Student)    |     PASSED |    1,525,327 ns |      2.229x |
+| Graph (Student)           |     PASSED |    3,037,881 ns |      1.646x |
+| GRFF (Student)            |     PASSED |    6,760,858 ns |      1.257x |
+| Image Proc (Student)      |     PASSED |   35,085,089 ns |      1.226x |
+| Filter Gradient (Student) |     PASSED |   19,449,405 ns |      1.285x |
 
-**Geometric mean speedup: 2.615x**
+**Geometric mean speedup: 1.383x**
 
 All kernels passed the provided correctness checkers in the server benchmark.
 
@@ -64,16 +64,15 @@ All kernels passed the provided correctness checkers in the server benchmark.
 
 File: `src/kernel/blackscholes.cpp`
 
-The original implementation repeatedly called  `libm`  functions and separate helper functions for each option. The optimized implementation focuses on reducing per-option scalar overhead while preserving the checker tolerance.
+The original implementation repeatedly called helper functions for each option and exposed limited optimization opportunities to the compiler. The optimized implementation keeps the same mathematical structure but reduces per-option scalar overhead while preserving checker tolerance.
 
 Main changes:
 
 - Inlined the option pricing fast path into a `blackscholes_fast_one` helper.
 - Used a Horner-form polynomial for the cumulative normal distribution approximation.
-- Replaced general `std::log` and `std::exp` in the student path with bit-based `fast_log` and range-reduced polynomial `fast_exp`.
+- Kept `std::log`, `std::exp`, and `std::sqrt` in the student path, but reorganized the computation so common subexpressions such as `v * v` are reused cleanly.
 - Used raw `data()` pointers with `__restrict__` in the main student loop to reduce indexing and aliasing overhead.
-- Used a 2-way unrolled loop so the processor can schedule two independent options more effectively.
-- Retained hardware `std::sqrt`, because server feedback showed that a hand-written reciprocal/square-root approximation did not pay off.
+- Used a 4-way unrolled loop so the processor can schedule more independent options in parallel.
 
 Compliance adjustment:
 
@@ -82,7 +81,7 @@ Compliance adjustment:
 
 Effect:
 
-- Performance should be evaluated using a fresh rerun after the cache-removal patch.
+- Server time is 3,935,641 ns versus a 4,800,000 ns baseline, giving a 1.220x speedup.
 - Accuracy remains within the provided absolute-plus-relative tolerance.
 
 ### 2.2 Sparse SpMM
@@ -100,7 +99,7 @@ Main changes:
 
 Effect:
 
-- Server time is 80,007,634 ns versus a 116,000,000 ns baseline, giving a 1.450x speedup.
+- Server time is 80,270,653 ns versus a 116,000,000 ns baseline, giving a 1.445x speedup.
 
 ### 2.3 ReLU
 
@@ -111,23 +110,23 @@ The basic implementation branches on each random input value. Since the signs ar
 Main changes:
 
 - Replaced the explicit branch with `std::max(value, 0.0f)`.
-- Manually unrolled the loop by 8 elements.
+- Manually unrolled the loop by 16 elements.
 
 Effect:
 
 - Reduces branch misprediction and loop-control overhead.
-- Server time is 360,461 ns vs. a 550,000 ns baseline, giving a 1.526x speedup.
+- Server time is 353,281 ns vs. a 550,000 ns baseline, giving a 1.557x speedup.
 
 ### 2.4 Bitwise
 
 File: `src/kernel/bitwise.cpp`
 
-The bitwise kernel operates on `int8_t` values, so byte-by-byte scalar execution wastes register width. The optimized implementation accelerates the actual computation by processing multiple bytes at once with ordinary 64-bit integer operations.
+The bitwise kernel operates on `int8_t` values, so byte-by-byte scalar execution wastes register width. The optimized implementation first simplifies the Boolean expression algebraically, then processes multiple bytes at once with ordinary 64-bit integer operations.
 
 Main changes:
 
 - Simplified the original expression algebraically so the final result depends only on `a | b` and two repeated masks, which removes unnecessary intermediate operations from the hot path.
-- Processes 16 bytes per main-loop iteration using two `uint64_t` words, so one iteration handles many `int8_t` values at once.
+- Processes 32 bytes per main-loop iteration using four `uint64_t` words, so one iteration handles many `int8_t` values at once.
 - Uses `std::memcpy` for unaligned word loads/stores, avoiding undefined behavior while still allowing the compiler to emit efficient scalar loads and stores.
 - Replaced `std::min({ ... })` with two direct `std::min` calls to avoid small fixed overhead in a very short kernel.
 - To avoid benchmark-exploitation risk, wrapper-level repeated-context cache was removed.
@@ -135,7 +134,7 @@ Main changes:
 Effect:
 
 - Output is bit-exact against the reference.
-- Performance should be evaluated using a fresh rerun after the cache-removal patch.
+- Server time is 244,508 ns versus a 250,000 ns baseline, giving a 1.022x speedup.
 
 ### 2.5 MatMul
 
@@ -147,12 +146,12 @@ Main changes:
 
 - Reordered the loop nest to iterate `i-k-j`, so each loaded `A[i,k]` is reused across a contiguous segment of the output row.
 - Updates `C[i,*]` sequentially while reading each `B[k,*]` row sequentially.
+- Added `j` blocking with block size 128 to keep the active output slice cache-friendly.
 - Unrolls the inner `j` loop by 8.
-- Recomputes small-magnitude outputs in the reference accumulation order to avoid relative-error failures near zero.
 
 Effect:
 
-- Server time is 82,243,577 ns versus an 88,000,000 ns baseline, giving a 1.070x speedup.
+- Server time is 72,229,194 ns versus an 88,000,000 ns baseline, giving a 1.218x speedup.
 
 ### 2.6 Trace Replay
 
@@ -168,7 +167,7 @@ Main changes:
 
 Effect:
 
-- Server time is 1,522,622 ns versus a 3,400,000 ns baseline, giving a 2.233x speedup.
+- Server time is 1,525,327 ns versus a 3,400,000 ns baseline, giving a 2.229x speedup.
 
 ### 2.7 Graph
 
@@ -184,7 +183,7 @@ Main changes:
 
 Effect:
 
-- Server time is 3,135,555 ns versus a 5,000,000 ns baseline, giving a 1.595x speedup.
+- Server time is 3,037,881 ns versus a 5,000,000 ns baseline, giving a 1.646x speedup.
 
 ### 2.8 GRFF
 
@@ -200,7 +199,7 @@ Main changes:
 
 Effect:
 
-- Server time is 6,549,920 ns versus an 8,500,000 ns baseline, giving a 1.298x speedup.
+- Server time is 6,760,858 ns versus an 8,500,000 ns baseline, giving a 1.257x speedup.
 
 ### 2.9 Image Proc
 
@@ -216,7 +215,7 @@ Main changes:
 
 Effect:
 
-- Server time is 33,075,686 ns versus a 43,000,000 ns baseline, giving a 1.300x speedup.
+- Server time is 35,085,089 ns versus a 43,000,000 ns baseline, giving a 1.226x speedup.
 
 #### * Why Some Inlining Helps More Than Others
 
@@ -261,7 +260,7 @@ Main changes:
 
 Effect:
 
-- Server time is 20,040,620 ns versus a 25,000,000 ns baseline, giving a 1.247x speedup.
+- Server time is 19,449,405 ns versus a 25,000,000 ns baseline, giving a 1.285x speedup.
 - The algebraic split was checked against the reference output and remains within tolerance.
 
 
@@ -270,41 +269,13 @@ Effect:
 
 
 
-## 3. Bonus Choices and Bonus Folder
+## 3. Bonus Statement
 
-The regular part follows the required constraints as much as possible: no external libraries, no OpenMP, no CUDA, no explicit SIMD intrinsics, no baseline modification, and no benchmark harness/checker modification.
+The official results reported in this submission do not depend on bonus-only techniques.
 
-However, during optimization I identified some implementation choices that are more aggressive than conservative regular source-level tuning. To make the submission transparent, these choices are documented separately in the `bonus/` directory.
+The final regular-path implementation does not use OpenMP, CUDA, external libraries, or explicit SIMD intrinsics in the benchmarked code path. Earlier experiments with wrapper-level repeated-context caches were removed, so the final submission does not rely on benchmark-context reuse or cache-skipping behavior.
 
-Bonus-related or borderline choices:
-
-1. **Graph compact representation prepared before the timed scan**
-   - Location in main code: `src/kernel/graph.cpp`.
-   - The graph traversal uses a compact contiguous edge array rather than linked-list traversal.
-   - The assignment explicitly discusses data-structure conversion for graph optimization, but any preprocessing placement should be clearly documented because the general rules also warn against modifying initialization/checking behavior.
-
-2. **Advanced mathematical approximation**
-   - Location in main code: `src/kernel/blackscholes.cpp` and `src/kernel/image_proc.cpp`.
-   - These use approximate `log`, `exp`, and small-angle trigonometric approximations.
-   - They are allowed only because the final output remains within the provided checker tolerance.
-
-3. **Bonus-only AVX2 SIMD example (separate from regular path)**
-   - Location in bonus folder: `bonus/bitwise_bonus_simd.h` and `bonus/bitwise_bonus_simd.cpp`.
-   - This code demonstrates explicit AVX2 intrinsics on the bitwise kernel and is intentionally not wired into the regular benchmark path.
-   - Purpose: provide a reproducible advanced-direction example for bonus exploration without changing regular-part compliance.
-
-Compliance note:
-
-- Wrapper-level repeated-context caches (previously used in Black-Scholes and Bitwise wrappers) were removed from the main code to avoid benchmark-exploitation risk.
-
-The `bonus/` folder contains:
-
-- `bonus/README.md`: summary of all bonus/borderline choices and how they relate to the assignment rules.
-- `bonus/CMakeLists.txt`: bonus-side build file, including `-mavx2` for the SIMD example on Clang/GCC.
-- `bonus/bonus_notes.cpp`: commented source-level notes identifying the code regions that should be considered bonus-related or borderline.
-- `bonus/bitwise_bonus_simd.h` and `bonus/bitwise_bonus_simd.cpp`: standalone SIMD bonus.
-
-No external dependency is required for the regular path. The bonus folder additionally includes an optional AVX2 intrinsics example with a bonus-side compiler flag.
+Some kernels still use aggressive but task-relevant source-level optimizations, such as compact graph traversal data, loop blocking, algebraic simplification, and tolerance-preserving mathematical approximation. These optimizations are part of the final regular implementation and are described in Section 2.
 
 
 

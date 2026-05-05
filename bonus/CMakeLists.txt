@@ -1,15 +1,15 @@
 cmake_minimum_required(VERSION 3.20)
-project(csc3060_project5_bonus_notes LANGUAGES CXX)
+project(csc3060_project5_bonus LANGUAGES CXX)
 
-add_library(bonus_notes OBJECT bonus_notes.cpp)
-target_compile_features(bonus_notes PRIVATE cxx_std_23)
+find_package(OpenMP)
 
-add_library(bitwise_bonus_simd OBJECT bitwise_bonus_simd.cpp)
-target_compile_features(bitwise_bonus_simd PRIVATE cxx_std_23)
-target_include_directories(bitwise_bonus_simd PRIVATE
-	${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-	target_compile_options(bitwise_bonus_simd PRIVATE -mavx2)
+if(OpenMP_CXX_FOUND)
+    add_library(image_proc_bonus_openmp OBJECT image_proc_bonus_openmp.cpp)
+    target_compile_features(image_proc_bonus_openmp PRIVATE cxx_std_23)
+    target_include_directories(image_proc_bonus_openmp PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+    target_link_libraries(image_proc_bonus_openmp PRIVATE OpenMP::OpenMP_CXX)
+else()
+    message(WARNING "OpenMP not found; image_proc bonus target will not be built.")
 endif()
