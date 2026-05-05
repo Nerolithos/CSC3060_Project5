@@ -464,3 +464,44 @@ Filter Gradient 判断：
 - 更新 `bonus/README.md`：明确说明保留的 bonus 代码、构建方式，以及删除/不保留的无效或说明性内容。
 
 作用：bonus 文件夹现在只保留有实际优化意义、可单独编译的 SIMD bonus 示例；无性能作用的说明性代码被移除，提交结构更清晰，也更符合“bonus 文件夹放 advanced optimization 实现”的要求。在非 x86 本地环境中，bonus CMake 会跳过 AVX2 target；在支持 AVX2 的课程服务器上仍可作为 SIMD bonus 代码构建。
+
+## 2026-05-05 Server Feedback Round 7
+
+本次服务器截图结果：
+
+| Kernel | Server time ns | Speedup |
+|---|---:|---:|
+| Black-Scholes | 3,947,373 | 1.216x |
+| Sparse SpMM | 65,463,780 | 1.772x |
+| ReLU | 371,928 | 1.479x |
+| Bitwise | 255,380 | 0.979x |
+| MatMul | 72,962,152 | 1.206x |
+| Trace Replay | 1,527,860 | 2.225x |
+| Graph | 3,110,401 | 1.608x |
+| GRFF | 6,806,361 | 1.249x |
+| Image Proc | 35,725,204 | 1.204x |
+| Filter Gradient | 19,551,433 | 1.279x |
+
+判断：
+
+- 大多数 kernel 已经稳定过线，不适合继续大改；Graph、Trace Replay、Filter Gradient 当前服务器结果都不错，应避免扰动。
+- Bitwise 是唯一低于 1.0x 的 kernel，且 workload 是 1,024,000 个 `int8_t` 元素，计算模式已经化简为 `0xA5 ^ ((a | b) & 0x99)`，非常适合服务器 Xeon 的 AVX2 packed integer path。
+- Black-Scholes 当前已经从之前 5ms 级别降到 3.95ms，说明前面的数学/dataflow 优化有效；本轮不继续冒险改近似公式或并行化，避免数值误差和线程开销引入新波动。
+
+本轮修改：
+
+- `src/kernel/bitwise.cpp`: 新增 x86/AVX2 guarded path。服务器支持 AVX2 时使用 `[[gnu::target("avx2")]]` 的 `stu_bitwise_avx2_core`，每次处理 64 bytes，两组 `_mm256_loadu_si256` + OR/AND/XOR + store；尾部继续使用原 scalar 逻辑。
+- `src/kernel/bitwise.cpp`: 保留原来的 `uint64_t + memcpy` fallback。非 x86、本地 Apple Silicon、或没有 AVX2 的环境会自动走 fallback，不需要修改 build script。
+
+作用：
+
+- 这是课程允许的 Advanced Optimization：利用 SIMD hardware / intrinsics。
+- 对服务器 Intel Xeon Silver 4210R 更贴合：减少循环次数和标量 load/store 数量，把每 32 个 `int8_t` lane 合并为少量 packed integer 指令。
+- 不改变输入、checker、baseline、计时逻辑，也没有记录测试数据后复用结果。
+
+验证：
+
+- `cmake --build build -j`: passed
+- `./build/run_stu`: all passed
+
+说明：本地运行只用于确认编译和 correctness；性能结论仍以课程服务器为准。
