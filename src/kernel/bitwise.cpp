@@ -58,41 +58,14 @@ void naive_bitwise(std::span<std::int8_t> result,
 void stu_bitwise(std::span<std::int8_t> result, std::span<const std::int8_t> a,
                  std::span<const std::int8_t> b) {
     // Algebraic simplification: mixed0^mixed1 == 0xA5 ^ ((a|b) & 0x99)
-    // std::vector guarantees allocations are aligned to alignof(max_align_t)
-    // (>= 16 bytes on all target platforms), so 8-byte alignment is assured.
-    constexpr std::uint64_t kBase64  = 0xA5A5A5A5A5A5A5A5ull;
-    constexpr std::uint64_t kDelta64 = 0x9999999999999999ull;
+    // Write a simple loop so GCC -O2 can auto-vectorize (AVX2: 32 bytes/iter)
+    const std::size_t n = std::min({result.size(), a.size(), b.size()});
+    auto       *__restrict__ dst = reinterpret_cast<std::uint8_t *>(result.data());
+    const auto *__restrict__ pa  = reinterpret_cast<const std::uint8_t *>(a.data());
+    const auto *__restrict__ pb  = reinterpret_cast<const std::uint8_t *>(b.data());
 
-    std::size_t n = std::min({result.size(), a.size(), b.size()});
-    auto       *__restrict__ dst64 =
-        reinterpret_cast<std::uint64_t *>(result.data());
-    const auto *__restrict__ pa64 =
-        reinterpret_cast<const std::uint64_t *>(a.data());
-    const auto *__restrict__ pb64 =
-        reinterpret_cast<const std::uint64_t *>(b.data());
-
-    const std::size_t words = n >> 3;   // full 8-byte words
-    std::size_t w = 0;
-    for (; w + 3 < words; w += 4) {
-        dst64[w + 0] = kBase64 ^ ((pa64[w + 0] | pb64[w + 0]) & kDelta64);
-        dst64[w + 1] = kBase64 ^ ((pa64[w + 1] | pb64[w + 1]) & kDelta64);
-        dst64[w + 2] = kBase64 ^ ((pa64[w + 2] | pb64[w + 2]) & kDelta64);
-        dst64[w + 3] = kBase64 ^ ((pa64[w + 3] | pb64[w + 3]) & kDelta64);
-    }
-    for (; w < words; ++w) {
-        dst64[w] = kBase64 ^ ((pa64[w] | pb64[w]) & kDelta64);
-    }
-
-    // Tail bytes (n % 8 != 0)
-    const auto *__restrict__ pa  =
-        reinterpret_cast<const std::uint8_t *>(a.data());
-    const auto *__restrict__ pb  =
-        reinterpret_cast<const std::uint8_t *>(b.data());
-    auto       *__restrict__ dst =
-        reinterpret_cast<std::uint8_t *>(result.data());
-    for (std::size_t i = words << 3; i < n; ++i) {
-        dst[i] = static_cast<std::uint8_t>(
-            0xA5u ^ ((pa[i] | pb[i]) & 0x99u));
+    for (std::size_t i = 0; i < n; ++i) {
+        dst[i] = static_cast<std::uint8_t>(0xA5u ^ ((pa[i] | pb[i]) & 0x99u));
     }
 }
 
