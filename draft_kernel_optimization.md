@@ -505,3 +505,45 @@ Filter Gradient 判断：
 - `./build/run_stu`: all passed
 
 说明：本地运行只用于确认编译和 correctness；性能结论仍以课程服务器为准。
+
+## 2026-05-05 Server Feedback Round 8
+
+本次服务器截图结果：
+
+| Kernel | Server time ns | Speedup |
+|---|---:|---:|
+| Black-Scholes | 3,877,493 | 1.238x |
+| Sparse SpMM | 84,805,509 | 1.368x |
+| ReLU | 370,017 | 1.486x |
+| Bitwise | 250,353 | 0.999x |
+| MatMul | 75,334,990 | 1.168x |
+| Trace Replay | 1,909,169 | 1.781x |
+| Graph | 3,407,846 | 1.467x |
+| GRFF | 7,071,952 | 1.202x |
+| Image Proc | 35,751,568 | 1.203x |
+| Filter Gradient | 19,768,738 | 1.265x |
+
+判断：
+
+- Round 7 的 AVX2 Bitwise 方向有效，服务器从 0.979x 提升到 0.999x，已经非常接近 baseline；继续只为 0.1% 大改 Bitwise 风险不划算。
+- MatMul 仍只有 1.168x，且计算规模固定为 512 x 512 x 512。当前 blocked `i-k-j` 写法 cache locality 尚可，但仍是单线程，未利用服务器 Intel Xeon Silver 4210R 的 40 logical CPUs。
+- 对 MatMul 按输出行分块并行是低风险策略：每个线程只写自己的 C 行区间，共享只读 A/B，不改变浮点累加顺序中每个元素的 k-loop 顺序，因此 correctness 风险较小。
+
+本轮修改：
+
+- `src/kernel/matmul.cpp`: 引入 `std::thread` 多线程 row partition。最多使用 16 个线程；主线程也承担最后一段 row range，避免只等待 worker。
+- `src/kernel/matmul.cpp`: 保留原有 `J_BLOCK = 128` 和内层 j 方向 8-way unroll。并行化只切分外层 i 行，不改变单个 C 元素的计算公式和 k-loop 顺序。
+- `src/kernel/matmul.cpp`: 使用 `A.data()` / `B.data()` / `C.data()` 的 base pointer 和 `__restrict__`，worker 中按 row range 访问，减少 lambda 内重复取 vector data 的开销。
+
+作用：
+
+- 这是课程允许的 Advanced Optimization：使用 threading framework (`std::thread`) 利用多核 CPU。
+- 服务器 MatMul 是大计算量 kernel，线程创建开销相对 512^3 次乘加很小；按行分块不会产生写冲突，也能保持每个线程访问连续 C rows。
+- 不修改测试文件、baseline、输入大小、seed、checker 或 timing logic。
+
+验证：
+
+- `cmake --build build -j`: passed
+- `./build/run_stu`: all passed
+
+说明：本地 MatMul 性能只用于 sanity check；真实收益需要看课程服务器，因为服务器 CPU core count/cache 与本地设备不同。
