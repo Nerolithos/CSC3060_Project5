@@ -1,8 +1,6 @@
 #include "blackscholes.h"
 #include <algorithm>
-#include <bit>
 #include <cmath>
-#include <cstdint>
 #include <cstdio>
 #include <random>
 
@@ -16,51 +14,10 @@
 
 namespace {
 
-static inline float fast_exp(float x) {
-    constexpr float inv_ln2 = 1.4426950408889634f;
-    constexpr float ln2 = 0.6931471805599453f;
-
-    const float z = x * inv_ln2;
-    int n = static_cast<int>(z + (z >= 0.0f ? 0.5f : -0.5f));
-    float r = x - static_cast<float>(n) * ln2;
-
-    const float r2 = r * r;
-    const float poly =
-        1.0f + r + r2 * (0.5f + r * (0.1666666667f +
-                                     r * (0.0416666667f +
-                                          r * 0.0083333333f)));
-
-    if (n < -126) {
-        return 0.0f;
-    }
-    if (n > 127) {
-        n = 127;
-    }
-    const std::uint32_t bits =
-        static_cast<std::uint32_t>(n + 127) << 23;
-    return poly * std::bit_cast<float>(bits);
-}
-
-static inline float fast_log(float x) {
-    const std::uint32_t bits = std::bit_cast<std::uint32_t>(x);
-    const int exp = static_cast<int>((bits >> 23) & 0xffu) - 127;
-    const std::uint32_t mant_bits = (bits & 0x007fffffu) | 0x3f800000u;
-    const float m = std::bit_cast<float>(mant_bits);
-
-    const float y = (m - 1.0f) / (m + 1.0f);
-    const float y2 = y * y;
-    const float log_m =
-        2.0f * y *
-        (1.0f + y2 * (0.3333333333f +
-                      y2 * (0.2f + y2 * (0.1428571429f +
-                                         y2 * 0.1111111111f))));
-    return log_m + static_cast<float>(exp) * 0.6931471805599453f;
-}
-
 static inline float cndf_approx(float in) {
     const float ax = std::abs(in);
     const float nprime =
-        fast_exp(-0.5f * ax * ax) * static_cast<float>(inv_sqrt_2xPI);
+        std::exp(-0.5f * ax * ax) * static_cast<float>(inv_sqrt_2xPI);
     const float k = 1.0f / (1.0f + static_cast<float>(p_val) * ax);
     const float poly =
         k * (static_cast<float>(coefficient_a1) +
@@ -80,14 +37,15 @@ static inline float cndf_approx(float in) {
                                                                 float v,
                                                                 float t) {
     const float sqrt_t = std::sqrt(t);
-    const float log_term = fast_log(s / x);
+    const float log_term = std::log(s / x);
     const float den = v * sqrt_t;
-    const float d1 = (log_term + (r + 0.5f * v * v) * t) / den;
+    const float vv = v * v;
+    const float d1 = (log_term + (r + 0.5f * vv) * t) / den;
     const float d2 = d1 - den;
 
     const float nd1 = cndf_approx(d1);
     const float nd2 = cndf_approx(d2);
-    const float future = x * fast_exp(-r * t);
+    const float future = x * std::exp(-r * t);
 
     call = s * nd1 - future * nd2;
     put = future * (1.0f - nd2) - s * (1.0f - nd1);
@@ -215,7 +173,7 @@ void stu_BlkSchls(std::vector<float> &CallOptionPrice,
     float *__restrict__ put = PutOptionPrice.data();
 
     size_t i = 0;
-    for (; i + 1 < n; i += 2) {
+    for (; i + 3 < n; i += 4) {
         blackscholes_fast_one(call[i],
                               put[i],
                               s_ptr[i],
@@ -230,6 +188,20 @@ void stu_BlkSchls(std::vector<float> &CallOptionPrice,
                               r_ptr[i + 1],
                               v_ptr[i + 1],
                               t_ptr[i + 1]);
+                    blackscholes_fast_one(call[i + 2],
+                                  put[i + 2],
+                                  s_ptr[i + 2],
+                                  x_ptr[i + 2],
+                                  r_ptr[i + 2],
+                                  v_ptr[i + 2],
+                                  t_ptr[i + 2]);
+                    blackscholes_fast_one(call[i + 3],
+                                  put[i + 3],
+                                  s_ptr[i + 3],
+                                  x_ptr[i + 3],
+                                  r_ptr[i + 3],
+                                  v_ptr[i + 3],
+                                  t_ptr[i + 3]);
     }
     for (; i < n; ++i) {
         blackscholes_fast_one(call[i],
