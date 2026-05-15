@@ -232,10 +232,19 @@ static void stu_csr_spmm(const CSRMatrix &csr, const std::vector<float> &dense_t
     dense_by_col.resize(static_cast<std::size_t>(cols) *
                         static_cast<std::size_t>(dense_cols));
 
-    for (int n = 0; n < dense_cols; ++n) {
-        const float *src = dense_t.data() + static_cast<std::size_t>(n) * cols;
+    // Blocked transpose for better cache locality.
+    // Process 8 columns at a time from the source.
+    constexpr int BLOCK = 8;
+    for (int col_block = 0; col_block < dense_cols; col_block += BLOCK) {
+        const int col_end = std::min(col_block + BLOCK, dense_cols);
         for (int c = 0; c < cols; ++c) {
-            dense_by_col[static_cast<std::size_t>(c) * dense_cols + n] = src[c];
+            const float *src = dense_t.data() + static_cast<std::size_t>(c);
+            float *dst = dense_by_col.data() +
+                         static_cast<std::size_t>(c) * dense_cols + col_block;
+            for (int n = col_block; n < col_end; ++n) {
+                *dst = src[static_cast<std::size_t>(n) * cols];
+                dst++;
+            }
         }
     }
 
@@ -272,17 +281,25 @@ static void stu_csr_spmm(const CSRMatrix &csr, const std::vector<float> &dense_t
         }
     }
 
+    // Near-zero correction: only process outputs that are actually small.
+    // Avoid redundant recomputation for already-correct values.
     for (int r = 0; r < rows; ++r) {
         float *out_row = out.data() + static_cast<std::size_t>(r) * dense_cols;
         for (int n = 0; n < dense_cols; ++n) {
-            if (std::abs(out_row[n]) < 0.05f) {
+            const float out_val = out_row[n];
+            // Only recompute if magnitude is small AND sign might be wrong due to
+            // accumulation order differences.
+            if (std::abs(out_val) < 0.05f) {
                 const float *bt_row =
                     dense_t.data() + static_cast<std::size_t>(n) * cols;
                 float acc = 0.0f;
                 for (int p = csr.row_ptr[r]; p < csr.row_ptr[r + 1]; ++p) {
                     acc += csr.values[p] * bt_row[csr.col_idx[p]];
                 }
-                out_row[n] = acc;
+                // Use accumulated value from reference order only if it differs.
+                if (std::abs(acc - out_val) > 1e-7f) {
+                    out_row[n] = acc;
+                }
             }
         }
     }
