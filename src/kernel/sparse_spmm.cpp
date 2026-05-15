@@ -228,7 +228,7 @@ static void stu_csr_spmm(const CSRMatrix &csr, const std::vector<float> &dense_t
     const int dense_cols = static_cast<int>(dense_t.size() / cols);
     std::fill(out.begin(), out.end(), 0.0f);
 
-    static thread_local std::vector<float> dense_by_col;
+    std::vector<float> dense_by_col;
     dense_by_col.resize(static_cast<std::size_t>(cols) *
                         static_cast<std::size_t>(dense_cols));
 
